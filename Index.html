@@ -112,6 +112,30 @@
         .enemy-icon { background: linear-gradient(45deg, #FF4757, #FF6B7A); }
         .weather-icon-ui { background: linear-gradient(45deg, #87CEEB, #A7D7E9); } /* Example style for weather icon container */
         
+        #musicControls {
+            margin-top: 10px;
+            text-align: right; 
+        }
+        #muteBtn {
+            background: rgba(255,255,255,0.2);
+            color: #FFF8DC;
+            border: 1px solid #D2691E;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s ease, transform 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+        #muteBtn:hover {
+            background: rgba(255,255,255,0.4);
+            transform: scale(1.1);
+        }
+
         #towerMenu {
             position: absolute;
             top: 15px;
@@ -311,6 +335,15 @@
     </style>
 </head>
 <body>
+    <audio id="backgroundMusic" loop preload="auto">
+        <source src="./wave_start.mp3" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+    <audio id="waveStartSoundEffect" preload="auto">
+        <source src="./wave_start.mp3" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+
     <div id="gameContainer">
         <canvas id="gameCanvas" width="1000" height="700"></canvas>
         <canvas id="particles" width="1000" height="700"></canvas>
@@ -323,6 +356,9 @@
             <div><span class="icon" style="background: linear-gradient(45deg, #A29BFE, #D6A2E8);"></span>XP: <span id="experience">0</span> | Lvl: <span id="level">1</span></div>
             <div><span class="icon" style="background: linear-gradient(45deg, #FF9A8B, #FF6A88);"></span>Combo: <span id="combo">0</span>x</div>
             <div><span class="icon weather-icon-ui" id="weatherIconContainer"><span id="weatherIcon">☀️</span></span>Weather: <span id="weatherStatus">Sunny</span></div>
+            <div id="musicControls">
+                <button id="muteBtn" title="Mute/Unmute Music">🔊</button>
+            </div>
         </div>
         
         <div id="towerMenu">
@@ -402,6 +438,9 @@
         if (!gameContainer) {
             console.error("FATAL: gameContainer element not found! Powerups and some UI messages may fail.");
         }
+
+        let audioElement = null;
+        let waveStartSfxElement = null; // Declare globally for wave start SFX
 
         // --- Game State and Configuration ---
         let gameState = {
@@ -514,7 +553,7 @@
             }
 
             createElement() {
-                if (!gameContainer) return; // Should have been caught by constructor check but good practice
+                if (!gameContainer) return; 
                 this.element = document.createElement('div');
                 this.element.classList.add('power-up-icon');
                 this.element.textContent = this.icon;
@@ -727,7 +766,7 @@
                 this.baseFireRate = typeData.fireRate; this.color = typeData.color; this.lastFired = 0;
                 this.target = null; this.experience = 0; this.kills = 0; this.totalDamage = 0;
                 this.activeBoosts = []; this.healingCooldown = 0;
-                this.towerCost = typeData.cost; // Store original cost for selling
+                this.towerCost = typeData.cost; 
             }
             get currentDamage() { let dmg = this.baseDamage; this.activeBoosts.forEach(b => { if(b.type === 'damage') dmg *= b.multiplier; }); return dmg; }
             get currentFireRate() { let fr = this.baseFireRate; this.activeBoosts.forEach(b => { if(b.type === 'fireRate') fr *= b.multiplier; }); return Math.max(100, fr); }
@@ -805,7 +844,6 @@
                 gameState.gold -= cost; this.upgrades[upgradeType] = currentUpgradeLevel + 1;
                 this.applyUpgradeEffect(upgradeType, upgradeDef.effect, this.upgrades[upgradeType]);
                 for (let i = 0; i < 15; i++) { gameState.particles.push(new Particle(this.x, this.y, 'nature', {speed:2, life: 25}));}
-                // showAchievement(`${this.type} ${upgradeType} Lvl ${this.upgrades[upgradeType]}`);
                 updateUI(); return true;
             }
             applyUpgradeEffect(upgradeType, effectValue, newLevel) {
@@ -1121,7 +1159,27 @@
             }
         }
         function startWave() { 
-             if (gameState.waveActive || !gameState.gameRunning || gameState.enemies.length > 0) return;
+            if (gameState.waveActive || !gameState.gameRunning || gameState.enemies.length > 0) return;
+
+            if (waveStartSfxElement) {
+                console.log("startWave: Wave start SFX element found. Attempting to play.");
+                console.log("startWave: SFX Current src:", waveStartSfxElement.currentSrc || "N/A", "Ready state:", waveStartSfxElement.readyState);
+                waveStartSfxElement.currentTime = 0;
+                // Volume is pre-set in DOMContentLoaded, but can be re-applied: waveStartSfxElement.volume = 0.5;
+                const sfxPlayPromise = waveStartSfxElement.play();
+                if (sfxPlayPromise !== undefined) {
+                    sfxPlayPromise.then(_ => {
+                        console.log("startWave: Wave start SFX - play() promise resolved (played successfully).");
+                    }).catch(error => {
+                        console.warn("startWave: Wave start SFX - play() promise rejected. Error:", error);
+                    });
+                } else {
+                     console.log("startWave: Wave start SFX - play() did not return a promise.");
+                }
+            } else {
+                 console.warn("startWave: waveStartSfxElement was null when trying to play.");
+            }
+
             gameState.waveActive = true;
             gameState.enemiesSpawnedThisWave = 0; 
             gameState.enemiesKilledThisWave = 0;
@@ -1130,6 +1188,25 @@
             if(waveBtn) { waveBtn.disabled = true; waveBtn.textContent = '🌊 Wave in Progress...';}
             spawnEnemyWave();
             if (gameState.wave > 1 && gameState.wave % 2 === 0) changeWeather(); 
+            
+            if (audioElement) {
+                console.log(`startWave: Checking background music. Wave: ${gameState.wave}, Paused: ${audioElement.paused}, Muted: ${audioElement.muted}, Ready state: ${audioElement.readyState}`);
+                if (audioElement.paused && !audioElement.muted && gameState.wave === 1) { 
+                    console.log("startWave: Attempting to play background music for the first wave.");
+                    const bgPlayPromise = audioElement.play();
+                    if (bgPlayPromise !== undefined) {
+                        bgPlayPromise.then(_ => {
+                            console.log("startWave: Background music - play() promise resolved (started successfully).");
+                        }).catch(error => {
+                            console.warn("startWave: Background music - play() promise rejected. Error:", error);
+                        });
+                    } else {
+                        console.log("startWave: Background music - play() did not return a promise.");
+                    }
+                }
+            } else {
+                console.warn("startWave: audioElement (backgroundMusic) was null when trying to play.");
+            }
             updateUI();
         }
         function changeWeather() {
@@ -1145,11 +1222,9 @@
         }
         function applyWeatherEffects() {
             if (gameState.currentWeatherEffectApplied) return;
-            // Specific effects are applied directly in Enemy/Tower/Projectile update methods based on gameState.weather
             gameState.currentWeatherEffectApplied = true;
         }
-        function removeWeatherEffects() { /* Not strictly needed if effects are conditional in updates */ }
-
+        
         function drawWeatherEffects(pCtxToUse) {
             if (!pCtxToUse) { console.warn("drawWeatherEffects: particleCtx not available"); return; }
             if (gameState.weather === 'rainy') {
@@ -1172,124 +1247,80 @@
         }
         function isValidTowerPosition(x, y, isPowerUp = false) {
             if (!canvas) return false;
-            // 1. Check canvas boundaries
-            if (x < CANVAS_MARGIN || x > canvas.width - CANVAS_MARGIN || y < CANVAS_MARGIN || y > canvas.height - CANVAS_MARGIN) {
-                return false;
-            }
-
-            // 2. Check path collision
+            if (x < CANVAS_MARGIN || x > canvas.width - CANVAS_MARGIN || y < CANVAS_MARGIN || y > canvas.height - CANVAS_MARGIN) return false;
             for (let i = 0; i < path.length - 1; i++) {
-                if (distanceToLineSegment(x, y, path[i], path[i+1]) < MIN_PATH_DISTANCE) {
-                    return false;
-                }
+                if (distanceToLineSegment(x, y, path[i], path[i+1]) < MIN_PATH_DISTANCE) return false;
             }
-
-            // 3. Check tower collision (only if not placing a power-up)
             if (!isPowerUp) {
                 for (let tower of gameState.towers) {
-                    const distance = Math.sqrt((x - tower.x)**2 + (y - tower.y)**2);
-                    if (distance < MIN_TOWER_DISTANCE) {
-                        return false;
-                    }
+                    if (Math.sqrt((x - tower.x)**2 + (y - tower.y)**2) < MIN_TOWER_DISTANCE) return false;
                 }
             }
             return true;
         }
         function placeTower(x, y) {
             if (!gameState.selectedTowerType || !towerTypes[gameState.selectedTowerType]) return;
-            
-            const type = gameState.selectedTowerType;
-            const cost = towerTypes[type].cost;
-
+            const type = gameState.selectedTowerType; const cost = towerTypes[type].cost;
             if (gameState.gold >= cost && isValidTowerPosition(x, y)) {
-                const newTower = new Tower(x, y, type);
-                gameState.towers.push(newTower);
-                gameState.gold -= cost;
-                gameState.selectedTowerType = null;
-                if(canvas) canvas.style.cursor = 'default';
-                
-                for (let i = 0; i < 20; i++) { // Placement particles
-                    gameState.particles.push(new Particle(x, y, 'nature', {speed: 2, life: 30}));
-                }
+                gameState.towers.push(new Tower(x, y, type)); gameState.gold -= cost;
+                gameState.selectedTowerType = null; if(canvas) canvas.style.cursor = 'default';
+                for (let i = 0; i < 20; i++) { gameState.particles.push(new Particle(x, y, 'nature', {speed: 2, life: 30}));}
                 updateUI();
-            } else if (gameState.gold < cost) {
-                showAchievement("Not enough Spirit Gems!");
-            } else {
-                 showAchievement("Cannot place tower here!");
-            }
+            } else if (gameState.gold < cost) { showAchievement("Not enough Spirit Gems!"); } 
+            else { showAchievement("Cannot place tower here!"); }
         }
         function selectTowerForUpgrade(x, y) {
             for (let tower of gameState.towers) {
-                const clickRadius = TOWER_BASE_RADIUS + tower.level * 0.5 + 5; // Make clickable area slightly larger
-                const distance = Math.sqrt((x - tower.x)**2 + (y - tower.y)**2);
-                if (distance < clickRadius) {
-                    gameState.selectedTower = tower;
-                    gameState.selectedTowerType = null; // Clear pending placement
-                    if(canvas) canvas.style.cursor = 'pointer';
-                    showUpgradePanel(tower);
-                    return true;
+                const clickRadius = TOWER_BASE_RADIUS + tower.level * 0.5 + 5;
+                if (Math.sqrt((x - tower.x)**2 + (y - tower.y)**2) < clickRadius) {
+                    gameState.selectedTower = tower; gameState.selectedTowerType = null; 
+                    if(canvas) canvas.style.cursor = 'pointer'; showUpgradePanel(tower); return true;
                 }
             }
-            gameState.selectedTower = null; // If no tower clicked, ensure no tower is selected
-            if(canvas) canvas.style.cursor = 'default';
-            closeUpgradePanel();
-            return false;
+            gameState.selectedTower = null; if(canvas) canvas.style.cursor = 'default'; closeUpgradePanel(); return false;
         }
         function showUpgradePanel(tower) {
-            const panel = document.getElementById('upgradePanel');
-            const nameEl = document.getElementById('upgradeTowerName');
+            const panel = document.getElementById('upgradePanel'); const nameEl = document.getElementById('upgradeTowerName');
             const optionsEl = document.getElementById('upgradeOptions');
-            
             if (!panel || !nameEl || !optionsEl || !tower) { console.error("Upgrade panel elements missing or tower not provided"); return; }
-
             nameEl.innerHTML = `🌿 ${tower.type.charAt(0).toUpperCase() + tower.type.slice(1)} <span style="font-size:0.8em;">(Lvl ${tower.level})</span>`;
-            
             let html = `<div style="margin-bottom: 8px; font-size: 0.9em;">Kills: ${tower.kills} | Dmg: ${tower.totalDamage.toFixed(0)}</div>`;
             const towerUpgradeDefs = towerTypes[tower.type].upgrades;
-
             for (let upgradeKey in towerUpgradeDefs) {
-                const upgradeDef = towerUpgradeDefs[upgradeKey];
-                const currentLevel = tower.upgrades[upgradeKey] || 0;
-                const cost = tower.getUpgradeCost(upgradeKey);
-                const maxed = currentLevel >= upgradeDef.max;
-                
+                const upgradeDef = towerUpgradeDefs[upgradeKey]; const currentLevel = tower.upgrades[upgradeKey] || 0;
+                const cost = tower.getUpgradeCost(upgradeKey); const maxed = currentLevel >= upgradeDef.max;
                 html += `
                     <div style="margin: 6px 0; display: flex; justify-content: space-between; align-items: center;">
                         <span style="flex-grow: 1;">${upgradeKey.charAt(0).toUpperCase() + upgradeKey.slice(1)} (${currentLevel}/${upgradeDef.max})</span>
-                        <button class="upgrade-btn" 
-                                onclick="upgradeTower('${upgradeKey}')"
+                        <button class="upgrade-btn" onclick="upgradeTower('${upgradeKey}')"
                                 title="${upgradeDef.description || ''} Cost: ${cost}G"
                                 ${maxed || gameState.gold < cost ? 'disabled' : ''}>
                             ${maxed ? 'MAX' : `${cost}G`}
                         </button>
-                    </div>
-                `;
+                    </div>`;
             }
-            
-            const sellValue = Math.floor(tower.towerCost * 0.6 + Object.values(tower.upgrades).reduce((sum, lvl, idx) => {
-                const upgradeKey = Object.keys(towerUpgradeDefs)[idx];
-                if(towerUpgradeDefs[upgradeKey]) {
-                    return sum + (tower.getUpgradeCost(upgradeKey) / 2) * lvl * 0.5; // Diminishing returns on upgrade sell
+            let refund = Math.floor(tower.towerCost * 0.6);
+            for (const upgradeKey in tower.upgrades) {
+                const currentLevel = tower.upgrades[upgradeKey];
+                if (towerUpgradeDefs[upgradeKey] && currentLevel > 0) {
+                    for(let i=0; i < currentLevel; i++) {
+                        const costAtLevelI = Math.floor(towerUpgradeDefs[upgradeKey].cost + (i * (towerUpgradeDefs[upgradeKey].cost * 0.45)));
+                        refund += Math.floor(costAtLevelI * 0.3);
+                    }
                 }
-                return sum;
-            }, 0));
-
+            }
             html += `
                 <div style="margin-top: 15px; text-align: center;">
                     <button class="upgrade-btn" onclick="sellTower()" style="background: linear-gradient(45deg, #E74C3C, #C0392B);">
-                        Sell (${sellValue}G)
+                        Sell (${refund}G)
                     </button>
-                </div>
-            `;
-            
-            optionsEl.innerHTML = html;
-            panel.style.display = 'block';
+                </div>`;
+            optionsEl.innerHTML = html; panel.style.display = 'block';
         }
         function upgradeTower(upgradeType) {
             if (gameState.selectedTower && gameState.selectedTower.upgrade(upgradeType)) {
                 showAchievement(`${gameState.selectedTower.type} ${upgradeType} upgraded!`);
-                showUpgradePanel(gameState.selectedTower); // Refresh panel
-                updateUI();
+                showUpgradePanel(gameState.selectedTower); updateUI();
             } else if (gameState.selectedTower) {
                  const cost = gameState.selectedTower.getUpgradeCost(upgradeType);
                  if (gameState.gold < cost) showAchievement("Not enough Spirit Gems for upgrade!");
@@ -1298,110 +1329,97 @@
         }
         function sellTower() {
             if (gameState.selectedTower) {
-                const tower = gameState.selectedTower;
-                const towerUpgradeDefs = towerTypes[tower.type].upgrades;
-                let refund = Math.floor(tower.towerCost * 0.6); // Base sell value
-
+                const tower = gameState.selectedTower; const towerUpgradeDefs = towerTypes[tower.type].upgrades;
+                let refund = Math.floor(tower.towerCost * 0.6);
                 for (const upgradeKey in tower.upgrades) {
                     const currentLevel = tower.upgrades[upgradeKey];
                     if (towerUpgradeDefs[upgradeKey] && currentLevel > 0) {
                         for(let i=0; i < currentLevel; i++) {
-                             // Calculate cost as if it was at level 'i' to get the cost for that specific level
                             const costAtLevelI = Math.floor(towerUpgradeDefs[upgradeKey].cost + (i * (towerUpgradeDefs[upgradeKey].cost * 0.45)));
-                            refund += Math.floor(costAtLevelI * 0.3); // Refund a smaller portion of each upgrade level's cost
+                            refund += Math.floor(costAtLevelI * 0.3);
                         }
                     }
                 }
-
                 gameState.gold += refund;
-                
-                const index = gameState.towers.indexOf(tower);
-                if (index > -1) {
-                    gameState.towers.splice(index, 1);
-                }
-                showAchievement(`Tower sold for ${refund}G!`);
-                closeUpgradePanel();
-                updateUI();
+                const index = gameState.towers.indexOf(tower); if (index > -1) gameState.towers.splice(index, 1);
+                showAchievement(`Tower sold for ${refund}G!`); closeUpgradePanel(); updateUI();
             }
         }
         function closeUpgradePanel() { const upEl = document.getElementById('upgradePanel'); if(upEl) upEl.style.display = 'none'; gameState.selectedTower = null; if(canvas && !gameState.selectedTowerType) canvas.style.cursor = 'default'; }
         
         function distanceToLineSegment(px, py, p1, p2) {
-            const l2 = (p2.x - p1.x)**2 + (p2.y - p1.y)**2;
-            if (l2 === 0) return Math.sqrt((px - p1.x)**2 + (py - p1.y)**2);
+            const l2 = (p2.x - p1.x)**2 + (p2.y - p1.y)**2; if (l2 === 0) return Math.sqrt((px - p1.x)**2 + (py - p1.y)**2);
             let t = ((px - p1.x) * (p2.x - p1.x) + (py - p1.y) * (p2.y - p1.y)) / l2;
-            t = Math.max(0, Math.min(1, t)); // Clamp t to the segment
-            const closestX = p1.x + t * (p2.x - p1.x);
-            const closestY = p1.y + t * (p2.y - p1.y);
-            return Math.sqrt((px - closestX)**2 + (py - closestY)**2);
+            t = Math.max(0, Math.min(1, t)); 
+            return Math.sqrt((px - (p1.x + t * (p2.x - p1.x)))**2 + (py - (p1.y + t * (p2.y - p1.y)))**2);
         }
         function checkAchievements() {
             const achievementsList = [
                 { id: 'first_kill', condition: () => gameState.totalEnemiesKilled >= 1, text: '🎯 First Blood!' },
-                { id: 'wave_5', condition: () => gameState.wave >= 6, text: '🌊 Wave 5 Cleared!' }, // wave is next wave, so >=6 means 5 is done
+                { id: 'wave_5', condition: () => gameState.wave >= 6, text: '🌊 Wave 5 Cleared!' },
                 { id: 'combo_10', condition: () => gameState.maxCombo >= 10, text: '🔥 Combo x10 Master!' },
                 { id: 'gold_500', condition: () => gameState.gold >= 500, text: '💰 Gold Hoarder (500G)!' },
                 { id: 'towers_5', condition: () => gameState.towers.length >= 5, text: '🏰 Tower Builder (5)!' },
                 { id: 'level_5', condition: () => gameState.level >= 5, text: '🌟 Guardian Level 5!'},
                 { id: 'dragon_slayer', condition: () => gameState.achievements.has('dragon_slain_flag'), text: '🐉 Dragon Slayer!'}
             ];
-            achievementsList.forEach(ach => {
-                if (!gameState.achievements.has(ach.id) && ach.condition()) {
-                    gameState.achievements.add(ach.id);
-                    showAchievement(ach.text);
-                }
-            });
+            achievementsList.forEach(ach => { if (!gameState.achievements.has(ach.id) && ach.condition()) { gameState.achievements.add(ach.id); showAchievement(ach.text); } });
         }
         function showAchievement(text) { const el = document.getElementById('achievement'); const txtEl = document.getElementById('achievementText'); if(el && txtEl){ txtEl.textContent = text; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3000);} }
         function checkDailyLoginReward() {
             const today = new Date().toDateString();
             if (gameState.lastLoginDate !== today) {
-                const rewardGold = 100 + Math.floor(Math.random() * 51);
-                gameState.gold += rewardGold;
-                localStorage.setItem('forestGuardiansLastLogin', today);
-                gameState.lastLoginDate = today;
-                showAchievement(`🎁 Daily Login! +${rewardGold}G`);
-                updateUI();
+                const rewardGold = 100 + Math.floor(Math.random() * 51); gameState.gold += rewardGold;
+                localStorage.setItem('forestGuardiansLastLogin', today); gameState.lastLoginDate = today;
+                showAchievement(`🎁 Daily Login! +${rewardGold}G`); updateUI();
+            }
+        }
+        function toggleMusic() {
+            if (!audioElement) {
+                console.warn("toggleMusic: audioElement (backgroundMusic) is null.");
+                return;
+            }
+            const muteBtn = document.getElementById('muteBtn');
+            if (audioElement.muted) {
+                console.log("toggleMusic: Unmuting audio. Current state: Paused -", audioElement.paused, ", ReadyState -", audioElement.readyState);
+                audioElement.muted = false;
+                if(muteBtn) muteBtn.textContent = '🔊';
+                 if (audioElement.paused) {
+                    console.log("toggleMusic: Audio was paused, attempting to play after unmute.");
+                    const playPromise = audioElement.play();
+                    if (playPromise !== undefined) {
+                        playPromise.then(_ => {
+                            console.log("toggleMusic: Play after unmute - play() promise resolved.");
+                        }).catch(e => {
+                            console.warn("toggleMusic: Play after unmute - play() promise rejected. Error:", e);
+                        });
+                    } else {
+                        console.log("toggleMusic: Play after unmute - play() did not return a promise.");
+                    }
+                }
+            } else {
+                console.log("toggleMusic: Muting audio.");
+                audioElement.muted = true;
+                if(muteBtn) muteBtn.textContent = '🔇';
             }
         }
         
         // --- Game Loop and Updates ---
-        let lastUpdateTime = 0;
-        let gameLoopErrorLogged = false; 
+        let lastUpdateTime = 0; let gameLoopErrorLogged = false; 
         function gameLoop(timestamp) {
-            if (!ctx || !particleCtx) { 
-                if (!gameLoopErrorLogged) {
-                    console.error("GameLoop: Canvas context not available. Halting game loop.");
-                    gameLoopErrorLogged = true;
-                }
-                return; 
-            }
-            
-            const deltaTime = timestamp - lastUpdateTime;
-            lastUpdateTime = timestamp;
-
+            if (!ctx || !particleCtx) { if (!gameLoopErrorLogged) { console.error("GameLoop: Canvas context not available. Halting game loop."); gameLoopErrorLogged = true; } return; }
+            const deltaTime = timestamp - lastUpdateTime; lastUpdateTime = timestamp;
             if (gameState.health <=0 && gameState.gameRunning) { gameOver(); }
-            if (gameState.gameRunning) {
-                 updateGame(timestamp, deltaTime); 
-                 drawGame();
-            }
+            if (gameState.gameRunning) { updateGame(timestamp, deltaTime); drawGame(); }
             requestAnimationFrame(gameLoop);
         }
-
         function updateGame(currentTime, deltaTime) { 
             if (!gameState.gameRunning) return;
-            
             if (!gameState.currentWeatherEffectApplied) applyWeatherEffects();
-            
             gameState.powerUpsOnMap.forEach(p => p.update()); 
             gameState.powerUpsOnMap = gameState.powerUpsOnMap.filter(p => p.lifespan > 0);
             if(gameState.waveActive) trySpawnPowerUp();
-
-            for (let i = gameState.particles.length - 1; i >= 0; i--) {
-                const p = gameState.particles[i];
-                if (typeof p.update === 'function') { if (!p.update()) gameState.particles.splice(i, 1); }
-                else { p.life = (p.life || 0) -1; if(p.life <=0) gameState.particles.splice(i,1); }
-            }
+            for (let i = gameState.particles.length - 1; i >= 0; i--) { const p = gameState.particles[i]; if (typeof p.update === 'function') { if (!p.update()) gameState.particles.splice(i, 1); } else { p.life = (p.life || 0) -1; if(p.life <=0) gameState.particles.splice(i,1); } }
             for (let i = gameState.enemies.length - 1; i >= 0; i--) {
                 const enemy = gameState.enemies[i]; enemy.update(currentTime); 
                 if (enemy.pathIndex >= path.length - 1) {
@@ -1412,7 +1430,6 @@
             }
             gameState.towers.forEach(t => t.update(currentTime));
             for (let i = gameState.projectiles.length - 1; i >= 0; i--) { if (!gameState.projectiles[i].update()) gameState.projectiles.splice(i, 1); }
-            
             if (gameState.waveActive && gameState.enemies.length === 0 && gameState.enemiesSpawnedThisWave >= gameState.expectedEnemiesThisWave && gameState.expectedEnemiesThisWave > 0 ) {
                 gameState.waveActive = false; gameState.wave++;
                 const waveBonus = 75 + gameState.wave * 20; gameState.gold += waveBonus; gameState.experience += waveBonus / 3; 
@@ -1423,47 +1440,33 @@
                     gameState.level++; gameState.experience -= expNeeded; gameState.gold += 75 + gameState.level * 15; 
                     showAchievement(`🌟 Guardian Level ${gameState.level}!`);
                 }
-                 gameState.expectedEnemiesThisWave = 0; // Reset for next wave
+                 gameState.expectedEnemiesThisWave = 0; 
             }
             updateUI();
         }
-        
         function drawGame() {
             if (!ctx || !particleCtx) { console.warn("drawGame: Contexts not available."); return; }
-            
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            particleCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
-            
-            drawBackground();       
-            drawPath();       
-            drawWeatherEffects(particleCtx); 
-            
-            gameState.towers.forEach(t => t.draw());
-            gameState.enemies.forEach(e => e.draw());
-            gameState.projectiles.forEach(p => p.draw());
-            gameState.particles.forEach(p => { if (typeof p.draw === 'function') p.draw(particleCtx); });
-            
+            ctx.clearRect(0, 0, canvas.width, canvas.height); particleCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+            drawBackground(); drawPath(); drawWeatherEffects(particleCtx); 
+            gameState.towers.forEach(t => t.draw()); gameState.enemies.forEach(e => e.draw());
+            gameState.projectiles.forEach(p => p.draw()); gameState.particles.forEach(p => { if (typeof p.draw === 'function') p.draw(particleCtx); });
             if (gameState.selectedTowerType && mouseX !== undefined && mouseY !== undefined && towerTypes[gameState.selectedTowerType]) {
                 const canPlace = isValidTowerPosition(mouseX, mouseY);
-                const towerColor = canPlace ? 'rgba(144, 238, 144, 0.5)' : 'rgba(255, 105, 97, 0.5)'; // Greenish for valid, reddish for invalid
-                const towerRangeColor = canPlace ? 'rgba(255, 255, 255, 0.35)' : 'rgba(200, 200, 200, 0.25)';
-                ctx.fillStyle = towerColor; ctx.beginPath(); ctx.arc(mouseX, mouseY, TOWER_BASE_RADIUS, 0, Math.PI * 2); ctx.fill();
-                ctx.strokeStyle = towerRangeColor; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+                ctx.fillStyle = canPlace ? 'rgba(144, 238, 144, 0.5)' : 'rgba(255, 105, 97, 0.5)'; 
+                ctx.beginPath(); ctx.arc(mouseX, mouseY, TOWER_BASE_RADIUS, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = canPlace ? 'rgba(255, 255, 255, 0.35)' : 'rgba(200, 200, 200, 0.25)';
+                ctx.lineWidth = 1; ctx.setLineDash([4,4]);
                 ctx.beginPath(); ctx.arc(mouseX, mouseY, towerTypes[gameState.selectedTowerType].range, 0, Math.PI * 2); ctx.stroke();
                 ctx.setLineDash([]);
             }
         }
-        
         function updateUI() { 
-            const el = (id) => document.getElementById(id); // Helper
-            if(el('health')) el('health').textContent = Math.max(0, gameState.health); // Ensure health doesn't go below 0 on UI
-            if(el('gold')) el('gold').textContent = gameState.gold;
-            if(el('wave')) el('wave').textContent = gameState.wave;
+            const el = (id) => document.getElementById(id); 
+            if(el('health')) el('health').textContent = Math.max(0, gameState.health);
+            if(el('gold')) el('gold').textContent = gameState.gold; if(el('wave')) el('wave').textContent = gameState.wave;
             if(el('enemies')) el('enemies').textContent = `${gameState.enemies.length} (K:${gameState.enemiesKilledThisWave}/${gameState.expectedEnemiesThisWave > 0 ? gameState.expectedEnemiesThisWave : gameState.enemiesSpawnedThisWave })`;
-            if(el('experience')) el('experience').textContent = gameState.experience;
-            if(el('level')) el('level').textContent = gameState.level;
+            if(el('experience')) el('experience').textContent = gameState.experience; if(el('level')) el('level').textContent = gameState.level;
             if(el('combo')) el('combo').textContent = `${gameState.combo}x`;
-
             const weatherText = gameState.weather.charAt(0).toUpperCase() + gameState.weather.slice(1);
             if(el('weatherStatus')) el('weatherStatus').textContent = weatherText;
             const weatherIconSpan = el('weatherIcon');
@@ -1473,32 +1476,25 @@
                 else if (gameState.weather === 'windy') weatherIconSpan.textContent = '💨';
             }
             if(el('dailyQuestText')) el('dailyQuestText').textContent = gameState.dailyQuestText;
-            
-            for (let type in towerTypes) {
-                const btn = document.querySelector(`.tower-btn[onclick="selectTower('${type}')"]`);
-                if (btn) btn.disabled = gameState.gold < towerTypes[type].cost || gameState.waveActive || gameState.selectedTowerType === type;
-            }
+            for (let type in towerTypes) { const btn = document.querySelector(`.tower-btn[onclick="selectTower('${type}')"]`); if (btn) btn.disabled = gameState.gold < towerTypes[type].cost || gameState.waveActive || gameState.selectedTowerType === type; }
             const waveBtn = el('waveBtn');
             if (waveBtn) {
                  waveBtn.disabled = gameState.waveActive || (gameState.enemies.length > 0 && !gameState.waveActive && gameState.enemiesSpawnedThisWave < gameState.expectedEnemiesThisWave) || gameState.selectedTowerType !== null; 
-                 if (gameState.waveActive) {
-                    waveBtn.textContent = '🌊 Wave in Progress...';
-                 } else if (gameState.enemies.length > 0 && gameState.enemiesSpawnedThisWave < gameState.expectedEnemiesThisWave) {
-                    waveBtn.textContent = '⏳ Clearing...';
-                 } else {
-                    waveBtn.textContent = '🌊 Summon Next Wave';
-                 }
+                 if (gameState.waveActive) waveBtn.textContent = '🌊 Wave in Progress...';
+                 else if (gameState.enemies.length > 0 && gameState.enemiesSpawnedThisWave < gameState.expectedEnemiesThisWave) waveBtn.textContent = '⏳ Clearing...';
+                 else waveBtn.textContent = '🌊 Summon Next Wave';
             }
-            if (gameState.selectedTower) { showUpgradePanel(gameState.selectedTower); } // Refresh upgrade panel if gold changes
+            if (gameState.selectedTower) { showUpgradePanel(gameState.selectedTower); }
         }
-        
         function gameOver() { 
-            gameState.gameRunning = false;
+            gameState.gameRunning = false; 
+            if (audioElement && !audioElement.paused) {
+                audioElement.pause();
+                console.log("gameOver: Background music paused.");
+            }
             const el = (id) => document.getElementById(id);
-            if(el('finalWave')) el('finalWave').textContent = gameState.wave;
-            if(el('finalExp')) el('finalExp').textContent = gameState.experience;
-            if(el('finalCombo')) el('finalCombo').textContent = gameState.maxCombo;
-            const gameOverEl = el('gameOver'); if(gameOverEl) gameOverEl.style.display = 'flex'; 
+            if(el('finalWave')) el('finalWave').textContent = gameState.wave; if(el('finalExp')) el('finalExp').textContent = gameState.experience;
+            if(el('finalCombo')) el('finalCombo').textContent = gameState.maxCombo; const gameOverEl = el('gameOver'); if(gameOverEl) gameOverEl.style.display = 'flex'; 
         }
         function restartGame() {
              gameState = {
@@ -1509,62 +1505,62 @@
                 totalEnemiesKilled: 0, achievements: new Set(),
                 weather: 'sunny', timeOfDay: 'day', specialEvents: [],
                 lastLoginDate: localStorage.getItem('forestGuardiansLastLogin'), 
-                currentWeatherEffectApplied: false, dailyQuestText: "Vanquish 10 Goblins!", // Reset quest or make dynamic later
+                currentWeatherEffectApplied: false, dailyQuestText: "Vanquish 10 Goblins!",
                 powerUpSpawnChance: 0.001, activeTowerBoosts: [],
             };
+            if (audioElement) { 
+                audioElement.currentTime = 0; 
+                if (!audioElement.paused) {
+                    audioElement.pause(); // Ensure it's paused on restart
+                    console.log("restartGame: Background music explicitly paused.");
+                }
+            }
             document.querySelectorAll('.power-up-icon').forEach(el => el.remove());
             const gameOverEl = document.getElementById('gameOver'); if(gameOverEl) gameOverEl.style.display = 'none';
-            closeUpgradePanel();
-            if(canvas) canvas.style.cursor = 'default';
-            updateUI(); 
-            lastUpdateTime = performance.now(); 
-            gameLoopErrorLogged = false; 
+            closeUpgradePanel(); if(canvas) canvas.style.cursor = 'default'; updateUI(); 
+            lastUpdateTime = performance.now(); gameLoopErrorLogged = false; 
             if(!ctx || !particleCtx) { /* Already handled by DOMContentLoaded */ }
-            else { requestAnimationFrame(gameLoop); } // Ensure loop restarts if it was stopped
+            else { requestAnimationFrame(gameLoop); } 
         }
         
         let mouseX = 0, mouseY = 0;
         
         if (canvas) { 
-            canvas.addEventListener('click', (e) => {
-                if(!ctx || !gameState.gameRunning) return; 
-                const rect = canvas.getBoundingClientRect(); 
-                const x = e.clientX - rect.left; const y = e.clientY - rect.top;
-                if (gameState.selectedTowerType) { placeTower(x, y); } 
-                else { if(!selectTowerForUpgrade(x,y)){ closeUpgradePanel(); } }
-            });
-            canvas.addEventListener('mousemove', (e) => { 
-                if(!ctx) return;
-                const rect = canvas.getBoundingClientRect(); 
-                mouseX = e.clientX - rect.left; mouseY = e.clientY - rect.top; 
-            });
-            canvas.addEventListener('contextmenu', (e) => { 
-                if(!ctx) return;
-                e.preventDefault(); 
-                gameState.selectedTowerType = null; 
-                // gameState.selectedTower = null; // Don't deselect tower on right click if panel is open
-                if (canvas) canvas.style.cursor = 'default'; 
-                // closeUpgradePanel(); // Keep upgrade panel open if a tower is selected
-                updateUI();
-            });
-        } else {
-            console.warn("Canvas not available for event listeners attachment.");
-        }
+            canvas.addEventListener('click', (e) => { if(!ctx || !gameState.gameRunning) return; const rect = canvas.getBoundingClientRect(); const x = e.clientX - rect.left; const y = e.clientY - rect.top; if (gameState.selectedTowerType) { placeTower(x, y); } else { if(!selectTowerForUpgrade(x,y)){ closeUpgradePanel(); } } });
+            canvas.addEventListener('mousemove', (e) => { if(!ctx) return; const rect = canvas.getBoundingClientRect(); mouseX = e.clientX - rect.left; mouseY = e.clientY - rect.top; });
+            canvas.addEventListener('contextmenu', (e) => { if(!ctx) return; e.preventDefault(); gameState.selectedTowerType = null; if (canvas) canvas.style.cursor = 'default'; updateUI(); });
+        } else { console.warn("Canvas not available for event listeners attachment."); }
         
         document.addEventListener('DOMContentLoaded', () => {
             console.log("DOMContentLoaded: Initializing game setup.");
-            if(particleCanvas && canvas && canvas.width && canvas.height) { 
-                particleCanvas.width = canvas.width; particleCanvas.height = canvas.height;
-                console.log("Particle canvas dimensions synced with game canvas.");
-            } else {
-                console.error("DOMContentLoaded: Canvas elements or main canvas dimensions not ready for particle canvas setup.");
-            }
-             gameState.lastLoginDate = localStorage.getItem('forestGuardiansLastLogin');
+            audioElement = document.getElementById('backgroundMusic');
+            waveStartSfxElement = document.getElementById('waveStartSoundEffect');
 
+            if (audioElement) {
+                audioElement.volume = 0.3;
+                console.log("DOMContentLoaded: Background music element found. Initial volume set to 0.3. ReadyState:", audioElement.readyState);
+            } else {
+                console.warn("DOMContentLoaded: Background music element (backgroundMusic) NOT found.");
+            }
+
+            if (waveStartSfxElement) {
+                waveStartSfxElement.volume = 0.5;
+                 console.log("DOMContentLoaded: Wave start SFX element found. Initial volume set to 0.5. ReadyState:", waveStartSfxElement.readyState);
+            } else {
+                console.warn("DOMContentLoaded: Wave start SFX element (waveStartSoundEffect) NOT found.");
+            }
+
+            const muteBtnEl = document.getElementById('muteBtn');
+            if (muteBtnEl) {
+                muteBtnEl.addEventListener('click', toggleMusic);
+            }
+
+            if(particleCanvas && canvas && canvas.width && canvas.height) { particleCanvas.width = canvas.width; particleCanvas.height = canvas.height; console.log("Particle canvas dimensions synced with game canvas."); } 
+            else { console.error("DOMContentLoaded: Canvas elements or main canvas dimensions not ready for particle canvas setup."); }
+            
+            gameState.lastLoginDate = localStorage.getItem('forestGuardiansLastLogin');
             if (ctx && particleCtx) { 
-                checkDailyLoginReward(); 
-                updateUI(); 
-                lastUpdateTime = performance.now();
+                checkDailyLoginReward(); updateUI(); lastUpdateTime = performance.now();
                 console.log("DOMContentLoaded: All checks passed. Starting game loop.");
                 requestAnimationFrame(gameLoop); 
             } else {
