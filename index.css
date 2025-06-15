@@ -1,0 +1,24 @@
+/*
+  Forest Guardians - Tower Defense
+  Global Styles (index.css)
+
+  The primary styling for the game is located inline within the <style>
+  tags in index.html. This file can be used for any overarching styles
+  or for styles that might be refactored out of the HTML in the future.
+*/
+
+/*
+  Example: Basic body reset, though the game's inline CSS already handles this.
+  body {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Nunito', sans-serif; // Match game's default font
+  }
+*/
+
+/*
+  The game imports 'Nunito' font via @import in its inline <style> tag.
+  If that were to be moved here, it would look like:
+  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700&display=swap');
+*/

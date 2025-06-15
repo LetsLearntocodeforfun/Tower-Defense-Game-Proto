@@ -1,0 +1,1580 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forest Guardians - Tower Defense</title>
+    <link rel="stylesheet" href="index.css">
+    <script type="importmap">
+      {
+        "imports": {
+          "@google/genai": "https://esm.sh/@google/genai@^0.8.0",
+          "marked": "https://esm.sh/marked@^15.0.8"
+        }
+      }
+    </script>
+    <script type="module" src="./index.tsx" defer></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700&display=swap');
+        
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #87CEEB 0%, #98FB98 50%, #F0E68C 100%);
+            font-family: 'Nunito', sans-serif;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="20" cy="20" r="2" fill="white" opacity="0.3"/><circle cx="80" cy="40" r="1.5" fill="white" opacity="0.2"/><circle cx="40" cy="70" r="1" fill="white" opacity="0.4"/><circle cx="90" cy="80" r="2.5" fill="white" opacity="0.1"/></svg>') repeat;
+            pointer-events: none;
+            animation: float 20s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        canvas { /* General canvas styling */
+            border: 3px solid #8B4513;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2), inset 0 0 20px rgba(255,255,255,0.1);
+        }
+
+        #gameCanvas { /* Specific styling for game canvas if needed, e.g., its default background */
+             background: linear-gradient(45deg, #90EE90, #98FB98, #ADFF2F); /* Fallback, actual game draws over this */
+        }
+        
+        #particles { /* Particle canvas needs to be transparent */
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 5; 
+            background: transparent; /* Ensures particle canvas itself doesn't block view */
+            border: none; /* Particle canvas typically doesn't need its own border */
+            box-shadow: none; /* Or specific shadow if desired, but often none */
+        }
+
+        #ui {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(139, 69, 19, 0.9);
+            padding: 15px;
+            border-radius: 15px;
+            color: #FFF8DC;
+            font-weight: 600;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            border: 2px solid #D2691E;
+            z-index: 10;
+            min-width: 220px;
+        }
+        
+        #ui div {
+            margin: 6px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        #ui .icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: inline-flex; /* For centering content if needed */
+            justify-content: center;
+            align-items: center;
+            font-size: 14px; /* For emoji icons */
+        }
+        
+        .health-icon { background: linear-gradient(45deg, #FF6B6B, #FF8E8E); }
+        .gold-icon { background: linear-gradient(45deg, #FFD700, #FFED4E); }
+        .wave-icon { background: linear-gradient(45deg, #4ECDC4, #45B7B8); }
+        .enemy-icon { background: linear-gradient(45deg, #FF4757, #FF6B7A); }
+        .weather-icon-ui { background: linear-gradient(45deg, #87CEEB, #A7D7E9); } /* Example style for weather icon container */
+        
+        #towerMenu {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(139, 69, 19, 0.95);
+            padding: 20px;
+            border-radius: 20px;
+            color: #FFF8DC;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            border: 3px solid #D2691E;
+            min-width: 200px;
+            z-index: 10;
+        }
+        
+        #towerMenu h3 {
+            margin: 0 0 15px 0;
+            text-align: center;
+            color: #FFED4E;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .tower-btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 700;
+            font-family: 'Nunito', sans-serif;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .tower-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+        }
+        
+        .tower-btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+        
+        .tower-btn:disabled {
+            background: linear-gradient(45deg, #7f8c8d, #95a5a6) !important; /* Important to override specific tower colors */
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .tower-btn.nature { background: linear-gradient(45deg, #2ECC71, #27AE60); }
+        .tower-btn.magic { background: linear-gradient(45deg, #9B59B6, #8E44AD); }
+        .tower-btn.wind { background: linear-gradient(45deg, #3498DB, #2980B9); }
+        .tower-btn.earth { background: linear-gradient(45deg, #E67E22, #D35400); }
+        .tower-btn.wave { background: linear-gradient(45deg, #E74C3C, #C0392B); }
+        
+        #upgradePanel {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            background: rgba(139, 69, 19, 0.95);
+            padding: 15px;
+            border-radius: 15px;
+            color: #FFF8DC;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            border: 2px solid #D2691E;
+            display: none;
+            min-width: 250px;
+            z-index: 10;
+        }
+        
+        .upgrade-btn {
+            background: linear-gradient(45deg, #F39C12, #E67E22);
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-family: 'Nunito', sans-serif;
+            margin: 3px;
+            transition: all 0.3s ease;
+        }
+        
+        .upgrade-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+        }
+         .upgrade-btn:disabled {
+            background: linear-gradient(45deg, #7f8c8d, #95a5a6);
+            cursor: not-allowed;
+        }
+        
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, rgba(139, 69, 19, 0.95), rgba(160, 82, 45, 0.95));
+            color: #FFF8DC;
+            padding: 40px;
+            border-radius: 25px;
+            text-align: center;
+            flex-direction: column; 
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            border: 4px solid #D2691E;
+            backdrop-filter: blur(10px);
+            z-index: 20;
+             display:none; 
+        }
+        
+        #startBtn {
+            background: linear-gradient(45deg, #E74C3C, #C0392B);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: 700;
+            font-family: 'Nunito', sans-serif;
+            border-radius: 12px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+            box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+        }
+        
+        #startBtn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+        }
+        
+        .achievement {
+            position: fixed;
+            top: 50%;
+            right: -350px; 
+            transform: translateY(-50%);
+            background: linear-gradient(45deg, #F39C12, #E67E22);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px 0 0 10px; 
+            font-weight: 600;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            transition: right 0.5s ease-in-out;
+            z-index: 100;
+            min-width: 250px; 
+            text-align: center;
+        }
+        
+        .achievement.show {
+            right: 0; 
+        }
+        
+        #dailyQuestPanel {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            background: rgba(139, 69, 19, 0.9);
+            padding: 10px 15px;
+            border-radius: 10px;
+            color: #FFF8DC;
+            font-weight: 600;
+            font-size: 0.9em;
+            box-shadow: 0 6px 15px rgba(0,0,0,0.25);
+            border: 2px solid #D2691E;
+            z-index: 10;
+            min-width: 180px;
+            text-align: center;
+        }
+        #dailyQuestPanel h4 {
+            margin: 0 0 5px 0;
+            color: #FFED4E;
+            font-size: 1.1em;
+        }
+
+        .power-up-icon {
+            font-size: 20px; 
+            cursor: pointer;
+            position: absolute; 
+            animation: pulse 1.5s infinite;
+            z-index: 6; 
+            padding: 5px;
+            background-color: rgba(255,255,255,0.2);
+            border-radius: 50%;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="1000" height="700"></canvas>
+        <canvas id="particles" width="1000" height="700"></canvas>
+        
+        <div id="ui">
+            <div><span class="icon health-icon"></span>Life Force: <span id="health">100</span></div>
+            <div><span class="icon gold-icon"></span>Spirit Gems: <span id="gold">200</span></div>
+            <div><span class="icon wave-icon"></span>Wave: <span id="wave">1</span></div>
+            <div><span class="icon enemy-icon"></span>Dark Spirits: <span id="enemies">0</span></div>
+            <div><span class="icon" style="background: linear-gradient(45deg, #A29BFE, #D6A2E8);"></span>XP: <span id="experience">0</span> | Lvl: <span id="level">1</span></div>
+            <div><span class="icon" style="background: linear-gradient(45deg, #FF9A8B, #FF6A88);"></span>Combo: <span id="combo">0</span>x</div>
+            <div><span class="icon weather-icon-ui" id="weatherIconContainer"><span id="weatherIcon">☀️</span></span>Weather: <span id="weatherStatus">Sunny</span></div>
+        </div>
+        
+        <div id="towerMenu">
+            <h3>🌸 Forest Guardians 🌸</h3>
+            <button class="tower-btn nature" onclick="selectTower('nature')">🌿 Nature Spirit ($60)</button>
+            <button class="tower-btn magic" onclick="selectTower('magic')">✨ Magic Crystal ($120)</button>
+            <button class="tower-btn wind" onclick="selectTower('wind')">💨 Wind Dancer ($100)</button>
+            <button class="tower-btn earth" onclick="selectTower('earth')">🏔️ Earth Guardian ($150)</button>
+            <button class="tower-btn wave" onclick="startWave()" id="waveBtn">🌊 Summon Wave</button>
+            <div style="margin-top: 10px; font-size: 12px; opacity: 0.8;">
+                Click towers to upgrade them! (R-Click to cancel)
+            </div>
+        </div>
+        
+        <div id="upgradePanel">
+            <h4 id="upgradeTowerName">Tower Upgrades</h4>
+            <div id="upgradeOptions"></div>
+            <button class="upgrade-btn" onclick="closeUpgradePanel()">Close</button>
+        </div>
+        
+        <div id="gameOver">
+            <h2>🌙 The Forest Rests 🌙</h2>
+            <p>You protected the forest through <span id="finalWave">0</span> waves</p>
+            <p>Experience Gained: <span id="finalExp">0</span></p>
+            <p>Highest Combo: <span id="finalCombo">0</span></p>
+            <button id="startBtn" onclick="restartGame()">🌱 Guardian Reborn</button>
+        </div>
+        
+        <div id="achievement" class="achievement">
+            <span id="achievementText"></span>
+        </div>
+
+        <div id="dailyQuestPanel">
+            <h4>📜 Daily Quest</h4>
+            <p id="dailyQuestText">Vanquish 10 Goblins!</p>
+        </div>
+    </div>
+
+    <script>
+        // --- Canvas and Context Initialization with Checks ---
+        console.log("Script start: Initializing canvas and contexts...");
+        const canvas = document.getElementById('gameCanvas');
+        let ctx = null;
+        if (!canvas) {
+            console.error("FATAL: gameCanvas element not found!");
+        } else {
+            try {
+                ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    console.error("FATAL: Failed to get 2D context for gameCanvas!");
+                } else {
+                    console.log("gameCanvas context obtained successfully.");
+                }
+            } catch (e) {
+                console.error("FATAL: Error getting 2D context for gameCanvas:", e);
+            }
+        }
+
+        const particleCanvas = document.getElementById('particles');
+        let particleCtx = null;
+        if (!particleCanvas) {
+            console.error("FATAL: particleCanvas element not found!");
+        } else {
+            try {
+                particleCtx = particleCanvas.getContext('2d');
+                if (!particleCtx) {
+                    console.error("FATAL: Failed to get 2D context for particleCanvas!");
+                } else {
+                    console.log("particleCanvas context obtained successfully.");
+                }
+            } catch (e) {
+                console.error("FATAL: Error getting 2D context for particleCanvas:", e);
+            }
+        }
+        
+        const gameContainer = document.getElementById('gameContainer');
+        if (!gameContainer) {
+            console.error("FATAL: gameContainer element not found! Powerups and some UI messages may fail.");
+        }
+
+        // --- Game State and Configuration ---
+        let gameState = {
+            health: 100, gold: 200, wave: 1, experience: 0, level: 1, combo: 0, maxCombo: 0,
+            enemies: [], towers: [], projectiles: [], particles: [], powerUpsOnMap: [],
+            selectedTowerType: null, selectedTower: null, gameRunning: true, waveActive: false,
+            enemiesSpawnedThisWave: 0, enemiesKilledThisWave: 0, expectedEnemiesThisWave: 0,
+            totalEnemiesKilled: 0, achievements: new Set(),
+            weather: 'sunny', timeOfDay: 'day', specialEvents: [],
+            lastLoginDate: null, currentWeatherEffectApplied: false,
+            dailyQuestText: "Vanquish 10 Goblins!",
+            powerUpSpawnChance: 0.001, activeTowerBoosts: [],
+        };
+        
+        const TOWER_BASE_RADIUS = 18; // Used for drawing and basic collision checks
+        const MIN_PATH_DISTANCE = 35; // How far towers must be from path center
+        const MIN_TOWER_DISTANCE = TOWER_BASE_RADIUS * 2 + 4; // Min distance between tower centers
+        const CANVAS_MARGIN = 20; // Prevent placement too close to edge
+
+        const path = [
+            {x: -30, y: 350}, {x: 80, y: 350}, {x: 120, y: 320}, {x: 160, y: 280},
+            {x: 200, y: 250}, {x: 280, y: 200}, {x: 350, y: 180}, {x: 420, y: 200},
+            {x: 480, y: 250}, {x: 520, y: 300}, {x: 560, y: 350}, {x: 620, y: 400},
+            {x: 680, y: 450}, {x: 750, y: 480}, {x: 820, y: 450}, {x: 870, y: 400},
+            {x: 920, y: 350}, {x: 1030, y: 350}
+        ];
+        
+        const towerTypes = {
+            nature: {
+                cost: 60, damage: 25, range: 90, fireRate: 1200, color: '#27AE60',
+                upgrades: {
+                    damage: { cost: 40, effect: 15, max: 5, description: "Increases attack damage." },
+                    range: { cost: 50, effect: 20, max: 3, description: "Increases attack range." },
+                    speed: { cost: 45, effect: -200, max: 4, description: "Increases attack speed." }, 
+                    healing: { cost: 80, effect: 'aura', max: 1, description: "Heals nearby towers slowly." }
+                }, special: 'poison'
+            },
+            magic: {
+                cost: 120, damage: 50, range: 120, fireRate: 2000, color: '#8E44AD',
+                upgrades: {
+                    damage: { cost: 60, effect: 25, max: 5, description: "Increases attack damage." },
+                    chain: { cost: 90, effect: 1, max: 3, description: "Attacks can chain to nearby enemies." }, 
+                    slow: { cost: 55, effect: 0.3, max: 2, description: "Attacks slow enemies." } 
+                }, special: 'pierce' 
+            },
+            wind: {
+                cost: 100, damage: 20, range: 80, fireRate: 600, color: '#3498DB',
+                upgrades: {
+                    speed: { cost: 35, effect: -100, max: 6, description: "Increases attack speed." },
+                    knockback: { cost: 65, effect: 0.1, max: 3, description: "Chance to knock enemies back." }, 
+                    crit: { cost: 50, effect: 0.05, max: 4, description: "Chance for critical hits." } 
+                }, special: 'knockback'
+            },
+            earth: {
+                cost: 150, damage: 80, range: 70, fireRate: 2500, color: '#E67E22',
+                upgrades: {
+                    damage: { cost: 80, effect: 30, max: 4, description: "Increases attack damage." },
+                    splash: { cost: 90, effect: 0.3, max: 3, description: "Deals splash damage." }, 
+                    stun: { cost: 150, effect: 0.05, max: 1, description: "Chance to briefly stun target." } 
+                }, special: 'splash'
+            }
+        };
+        
+        const enemyTypes = {
+            imp: { health: 40, speed: 1.2, reward: 8, color: '#E74C3C', special: 'basic', size: 10 },
+            goblin: { health: 60, speed: 1.5, reward: 12, color: '#F39C12', special: 'fast', size: 11 },
+            orc: { health: 120, speed: 0.8, reward: 20, color: '#34495e', special: 'tank', size: 14 },
+            troll: { health: 200, speed: 0.6, reward: 35, color: '#8E44AD', special: 'regen', size: 16 },
+            shadow: { health: 80, speed: 2.0, reward: 25, color: '#2C3E50', special: 'stealth', size: 12 },
+            dragon: { health: 500, speed: 0.9, reward: 100, color: '#C0392B', special: 'boss', size: 22 }, 
+            phantom: { health: 150, speed: 1.3, reward: 30, color: '#9B59B6', special: 'phase', size: 13 }, 
+            golem: { health: 300, speed: 0.4, reward: 50, color: '#7F8C8D', special: 'armor', size: 18 } 
+        };
+
+        let lastCollectedPowerUpPos = {x:0, y:0};
+        const powerUpTypes = {
+            gemBurst: { icon: '💰', color: '#FFD700', effect: () => { gameState.gold += 50; showAchievement('💰 Spirit Gem Burst! +50G'); createBurstParticles(lastCollectedPowerUpPos.x, lastCollectedPowerUpPos.y, '#FFD700', 20); } },
+            frostNova: { icon: '❄️', color: '#00BFFF', effect: () => { gameState.enemies.forEach(enemy => enemy.applyEffect('slow', 300, 0.5)); showAchievement('❄️ Frost Nova! Enemies slowed!'); createBurstParticles(lastCollectedPowerUpPos.x, lastCollectedPowerUpPos.y, '#00BFFF', 20); } },
+            guardiansWrath: { icon: '⚔️', color: '#FF6347', effect: () => { 
+                showAchievement('⚔️ Guardian\'s Wrath! Towers boosted!');
+                createBurstParticles(lastCollectedPowerUpPos.x, lastCollectedPowerUpPos.y, '#FF6347', 20);
+                const boostDuration = 10000; // 10 seconds
+                const boostId = Date.now();
+                gameState.towers.forEach(tower => {
+                    tower.activeBoosts.push({ id: boostId, type: 'damage', multiplier: 1.2, endTime: Date.now() + boostDuration });
+                });
+                setTimeout(() => {
+                    gameState.towers.forEach(tower => {
+                        tower.activeBoosts = tower.activeBoosts.filter(b => b.id !== boostId);
+                    });
+                }, boostDuration);
+            }}
+        };
+        
+        class PowerUp {
+            constructor(x, y, typeKey) {
+                if (!gameContainer) {
+                    console.warn("PowerUp: gameContainer not found, cannot create power-up DOM element.");
+                    return; 
+                }
+                this.x = x;
+                this.y = y;
+                this.typeKey = typeKey;
+                this.type = powerUpTypes[typeKey];
+                this.icon = this.type.icon;
+                this.size = 24; 
+                this.lifespan = 800; 
+                this.element = null; 
+                this.createElement();
+            }
+
+            createElement() {
+                if (!gameContainer) return; // Should have been caught by constructor check but good practice
+                this.element = document.createElement('div');
+                this.element.classList.add('power-up-icon');
+                this.element.textContent = this.icon;
+                this.element.style.left = `${this.x - this.size / 2}px`;
+                this.element.style.top = `${this.y - this.size / 2}px`;
+                this.element.style.color = this.type.color;
+                this.element.onclick = () => this.collect();
+                gameContainer.appendChild(this.element);
+            }
+
+            update() {
+                this.lifespan--;
+                if (this.lifespan <= 0) {
+                    this.remove();
+                    return false;
+                }
+                return true;
+            }
+            
+            collect() {
+                lastCollectedPowerUpPos = {x: this.x, y: this.y};
+                this.type.effect();
+                this.remove();
+                const index = gameState.powerUpsOnMap.indexOf(this);
+                if (index > -1) gameState.powerUpsOnMap.splice(index, 1);
+            }
+
+            remove() {
+                if (this.element && this.element.parentElement) {
+                    this.element.parentElement.removeChild(this.element);
+                    this.element = null; 
+                }
+            }
+        }
+        
+        class Particle {
+            constructor(x, y, type = 'magic', options = {}) {
+                this.x = x; this.y = y;
+                this.vx = options.vx !== undefined ? options.vx : (Math.random() - 0.5) * (options.speed || 4);
+                this.vy = options.vy !== undefined ? options.vy : (Math.random() - 0.5) * (options.speed || 4);
+                this.life = options.life || (Math.random() * 30 + 30); 
+                this.maxLife = this.life;
+                this.type = type;
+                this.size = options.size !== undefined ? options.size : Math.random() * 4 + 2;
+                this.color = options.color || this.getColor();
+                this.gravity = options.gravity !== undefined ? options.gravity : 0.1;
+                this.drag = options.drag !== undefined ? options.drag : 0.98;
+                this.fade = options.fade !== undefined ? options.fade : true;
+                this.shape = options.shape || 'circle'; 
+                this.rotation = Math.random() * Math.PI * 2;
+                this.rotationSpeed = (Math.random() - 0.5) * 0.1;
+            }
+            getColor() {
+                const colors = {
+                    magic: ['#FFD700', '#FF69B4', '#00CED1', '#9370DB'],
+                    nature: ['#32CD32', '#90EE90', '#ADFF2F', '#20B2AA'],
+                    fire: ['#FF4500', '#FF6347', '#FFD700', '#FFA500'],
+                    water: ['#00BFFF', '#87CEEB', '#B0E0E6', '#4682B4'],
+                    smoke: ['#708090', '#A9A9A9', '#C0C0C0'],
+                    star: ['#FFFF00', '#FFFAF0', '#FFD700'],
+                    rain: ['rgba(135, 206, 250, 0.6)'], 
+                    wind: ['rgba(220, 220, 220, 0.5)']  
+                };
+                const colorSet = colors[this.type] || colors.magic;
+                return colorSet[Math.floor(Math.random() * colorSet.length)];
+            }
+            update() {
+                this.x += this.vx; this.y += this.vy;
+                this.vy += this.gravity; this.life--;
+                this.vx *= this.drag; this.vy *= this.drag;
+                if(this.shape === 'star') this.rotation += this.rotationSpeed;
+                if (this.size > 0.2 && this.fade) this.size *= 0.98; 
+                return this.life > 0 && this.size > 0.1;
+            }
+            draw(pCtxToUse) { 
+                if (!pCtxToUse) return; 
+                const alpha = this.fade ? (this.life / this.maxLife) : 1;
+                pCtxToUse.save();
+                pCtxToUse.globalAlpha = Math.max(0, alpha); 
+                pCtxToUse.fillStyle = this.color; pCtxToUse.strokeStyle = this.color; 
+                pCtxToUse.lineWidth = this.size;    
+                pCtxToUse.translate(this.x, this.y); 
+                pCtxToUse.rotate(this.rotation);
+                switch(this.shape) {
+                    case 'circle': pCtxToUse.beginPath(); pCtxToUse.arc(0, 0, this.size, 0, Math.PI * 2); pCtxToUse.fill(); break;
+                    case 'line': pCtxToUse.beginPath(); pCtxToUse.moveTo(0,0); pCtxToUse.lineTo(this.vx * 2, this.vy * 2); pCtxToUse.stroke(); break;
+                    case 'star': this.drawStar(pCtxToUse, 0, 0, 5, this.size, this.size / 2); break;
+                }
+                pCtxToUse.restore();
+            }
+            drawStar(pCtxToUse, cx, cy, spikes, outerRadius, innerRadius) {
+                if (!pCtxToUse) return;
+                let rot = Math.PI / 2 * 3; let x = cx; let y = cy;
+                const step = Math.PI / spikes;
+                pCtxToUse.beginPath(); pCtxToUse.moveTo(cx, cy - outerRadius);
+                for (let i = 0; i < spikes; i++) {
+                    x = cx + Math.cos(rot) * outerRadius; y = cy + Math.sin(rot) * outerRadius;
+                    pCtxToUse.lineTo(x, y); rot += step;
+                    x = cx + Math.cos(rot) * innerRadius; y = cy + Math.sin(rot) * innerRadius;
+                    pCtxToUse.lineTo(x, y); rot += step;
+                }
+                pCtxToUse.lineTo(cx, cy - outerRadius); pCtxToUse.closePath(); pCtxToUse.fill();
+            }
+        }
+        
+        class Enemy {
+             constructor(type, pathIndex = 0) {
+                this.type = type; const typeData = enemyTypes[type]; this.baseHealth = typeData.health; this.baseSpeed = typeData.speed;
+                this.health = this.baseHealth * (1 + (gameState.wave -1) * 0.15); this.maxHealth = this.health;
+                this.speed = this.baseSpeed * (1 + (gameState.wave -1) * 0.03); this.currentSpeed = this.speed;
+                this.reward = typeData.reward + Math.floor((gameState.wave-1) / 3); this.color = typeData.color;
+                this.special = typeData.special; this.pathIndex = pathIndex; this.x = path[0].x; this.y = path[0].y;
+                this.effects = {}; this.baseArmor = (this.special === 'armor' || this.special === 'golem') ? 0.3 : 0;
+                this.currentArmor = this.baseArmor; this.stealthTime = 0; this.phaseTime = 0; this.regenCooldown = 0;
+                this.size = typeData.size || 12;
+            }
+            update(currentTime) {
+                this.currentSpeed = this.speed; this.currentArmor = this.baseArmor;
+                for (let effectKey in this.effects) {
+                    const effect = this.effects[effectKey]; effect.duration--;
+                    if (effect.duration <= 0) { delete this.effects[effectKey]; }
+                    else {
+                        if (effectKey === 'slow') this.currentSpeed *= (1 - effect.factor);
+                        if (effectKey === 'armorReduce') this.currentArmor = Math.max(0, this.currentArmor - effect.factor);
+                        if (effectKey === 'poison' && currentTime % 60 < 2) { this.takeDamage(effect.dps, 'poison_tick', true); }
+                    }
+                }
+                this.currentSpeed = Math.max(0.1, this.currentSpeed);
+                if (gameState.weather === 'rainy') this.currentSpeed *= 0.9;
+                if (gameState.weather === 'windy' && Math.random() < 0.001) this.performKnockback(5);
+                this.handleSpecialAbilities(currentTime);
+                if (this.pathIndex < path.length - 1) {
+                    const target = path[this.pathIndex + 1]; const dx = target.x - this.x; const dy = target.y - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < this.currentSpeed) {
+                        this.pathIndex++;
+                        if(this.pathIndex < path.length -1) { this.x = path[this.pathIndex].x; this.y = path[this.pathIndex].y; }
+                        else { this.x = path[path.length -1].x; this.y = path[path.length -1].y; }
+                    } else { this.x += (dx / distance) * this.currentSpeed; this.y += (dy / distance) * this.currentSpeed; }
+                }
+            }
+            handleSpecialAbilities(currentTime) {
+                switch (this.special) {
+                    case 'regen': this.regenCooldown--; if (this.regenCooldown <= 0) { this.health = Math.min(this.health + this.maxHealth * 0.02, this.maxHealth); this.regenCooldown = 180; } break;
+                    case 'stealth': this.stealthTime = (this.stealthTime + 1) % 480; break;
+                    case 'phase': this.phaseTime = (this.phaseTime + 1) % 600; break;
+                }
+            }
+            isStealthed() { return this.special === 'stealth' && this.stealthTime > 180 && this.stealthTime < 360; }
+            isPhased() { return this.special === 'phase' && this.phaseTime > 300 && this.phaseTime < 420; }
+            draw() {
+                if (!ctx) return; 
+                if (this.isStealthed() && Math.random() < 0.7) return;
+                ctx.save();
+                let effectiveColor = this.color;
+                if (this.isStealthed()) ctx.globalAlpha = 0.4;
+                if (this.isPhased()) { effectiveColor = '#AFEEEE'; ctx.globalAlpha = 0.6; }
+                ctx.fillStyle = effectiveColor; ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 1.0; 
+                ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(this.x - this.size * 0.3, this.y - this.size * 0.2, this.size * 0.15, 0, Math.PI * 2); ctx.arc(this.x + this.size * 0.3, this.y - this.size * 0.2, this.size * 0.15, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(this.x - this.size * 0.3, this.y - this.size * 0.2, this.size * 0.08, 0, Math.PI * 2); ctx.arc(this.x + this.size * 0.3, this.y - this.size * 0.2, this.size * 0.08, 0, Math.PI * 2); ctx.fill();
+                if (this.health < this.maxHealth) {
+                    const healthPercent = this.health / this.maxHealth;
+                    ctx.fillStyle = '#E74C3C'; ctx.fillRect(this.x - this.size, this.y - this.size - 10, this.size * 2, 5);
+                    ctx.fillStyle = '#27AE60'; ctx.fillRect(this.x - this.size, this.y - this.size - 10, this.size * 2 * healthPercent, 5);
+                }
+                let indicatorY = this.y - this.size - 18;
+                if (this.effects.poison) { ctx.fillStyle = '#2ECC71'; ctx.beginPath(); ctx.arc(this.x - 5, indicatorY, 3, 0, Math.PI * 2); ctx.fill(); }
+                if (this.effects.slow) { ctx.fillStyle = '#3498DB'; ctx.beginPath(); ctx.arc(this.x + 5, indicatorY, 3, 0, Math.PI * 2); ctx.fill(); }
+                if (this.effects.stun) { ctx.fillStyle = '#F1C40F'; ctx.font = "bold 10px Nunito"; ctx.fillText("✨", this.x, indicatorY + 3); }
+                ctx.restore();
+            }
+            takeDamage(damage, damageType = 'normal', silent = false) {
+                if (this.isPhased() && damageType !== 'poison_tick') return false; 
+                let actualDamage = damage * (1 - this.currentArmor);
+                if (damageType === 'poison' && !this.effects.poison) { this.applyEffect('poison', 300, 5); }
+                this.health -= actualDamage;
+                if (!silent) {
+                    for (let i = 0; i < Math.min(5, Math.ceil(actualDamage / 10)); i++) { gameState.particles.push(new Particle(this.x + (Math.random()-0.5)*this.size, this.y + (Math.random()-0.5)*this.size, 'fire', {size: Math.random()*2+1, speed: 2})); }
+                }
+                return this.health <= 0;
+            }
+            applyEffect(effectKey, duration, factorOrDps) {
+                if (effectKey === 'stun' && this.special === 'boss') return; 
+                if (!this.effects[effectKey] || duration > this.effects[effectKey].duration) {
+                    this.effects[effectKey] = { duration: duration };
+                    if (effectKey === 'slow' || effectKey === 'armorReduce') this.effects[effectKey].factor = factorOrDps;
+                    if (effectKey === 'poison') this.effects[effectKey].dps = factorOrDps;
+                }
+            }
+            performKnockback(force) {
+                if (this.pathIndex > 0) {
+                    const targetPoint = path[this.pathIndex]; const prevPoint = path[this.pathIndex -1];
+                    const dirX = targetPoint.x - prevPoint.x; const dirY = targetPoint.y - prevPoint.y;
+                    const len = Math.sqrt(dirX*dirX + dirY*dirY);
+                    if (len > 0) {
+                        this.x -= (dirX / len) * force; this.y -= (dirY / len) * force;
+                        const distToPrevNow = Math.sqrt( (this.x - prevPoint.x)**2 + (this.y - prevPoint.y)**2 );
+                        const distPrevToTarget = Math.sqrt( (targetPoint.x - prevPoint.x)**2 + (targetPoint.y - prevPoint.y)**2 );
+                        if(distToPrevNow > distPrevToTarget && distanceToLineSegment(this.x, this.y, prevPoint, targetPoint) > len) { this.x = prevPoint.x; this.y = prevPoint.y; }
+                    }
+                }
+            }
+        }
+        
+        class Tower {
+            constructor(x, y, type) {
+                this.x = x; this.y = y; this.type = type; const typeData = towerTypes[type];
+                this.level = 1; this.upgrades = {}; this.baseDamage = typeData.damage; this.baseRange = typeData.range;
+                this.baseFireRate = typeData.fireRate; this.color = typeData.color; this.lastFired = 0;
+                this.target = null; this.experience = 0; this.kills = 0; this.totalDamage = 0;
+                this.activeBoosts = []; this.healingCooldown = 0;
+                this.towerCost = typeData.cost; // Store original cost for selling
+            }
+            get currentDamage() { let dmg = this.baseDamage; this.activeBoosts.forEach(b => { if(b.type === 'damage') dmg *= b.multiplier; }); return dmg; }
+            get currentFireRate() { let fr = this.baseFireRate; this.activeBoosts.forEach(b => { if(b.type === 'fireRate') fr *= b.multiplier; }); return Math.max(100, fr); }
+            get currentRange() { let rng = this.baseRange; if (this.type === 'wind' && gameState.weather === 'rainy') rng *= 0.9; return rng; }
+            update(currentTime) {
+                this.activeBoosts = this.activeBoosts.filter(b => currentTime < b.endTime);
+                if (currentTime - this.lastFired < this.currentFireRate) return;
+                this.target = this.findBestTarget();
+                if (this.target) { this.fire(this.target); this.lastFired = currentTime; } else { this.target = null; }
+                if (this.experience >= this.level * 100 + 50 * (this.level -1)) { this.levelUp(); }
+                if (this.type === 'nature' && this.upgrades.healing && currentTime > this.healingCooldown) { this.healNearbyTowers(currentTime); this.healingCooldown = currentTime + 5000; }
+            }
+            healNearbyTowers(currentTime) {
+                const healingRange = 80 + (this.upgrades.healing || 0) * 10; 
+                for (let otherTower of gameState.towers) {
+                    if (otherTower === this) continue; 
+                    const distance = Math.sqrt((otherTower.x - this.x) ** 2 + (otherTower.y - this.y) ** 2);
+                    if (distance <= healingRange) {
+                         for (let i = 0; i < 5; i++) { gameState.particles.push(new Particle(otherTower.x, otherTower.y, 'nature', {vy: -0.5, life: 30, size: 3, gravity: -0.05})); }
+                    }
+                }
+            }
+            findBestTarget() {
+                let candidates = [];
+                for (let enemy of gameState.enemies) {
+                    if (enemy.isStealthed() && this.type !== 'magic') continue; 
+                    if (enemy.isPhased()) continue; 
+                    const distance = Math.sqrt((enemy.x - this.x) ** 2 + (enemy.y - this.y) ** 2);
+                    if (distance <= this.currentRange) { candidates.push({ enemy, distance, priority: this.calculatePriority(enemy, distance) }); }
+                }
+                if (candidates.length === 0) return null;
+                candidates.sort((a, b) => b.priority - a.priority); return candidates[0].enemy;
+            }
+            calculatePriority(enemy, distance) {
+                let priority = enemy.pathIndex / path.length * 1000; 
+                if (enemy.special === 'boss') priority += 500; else if (enemy.special === 'phantom' || enemy.special === 'shadow') priority += 200;
+                if (enemy.health < this.currentDamage * (1 + (this.upgrades.crit ? this.upgrades.crit * towerTypes[this.type].upgrades.crit.effect * 1.5 : 0)) ) priority += 300; 
+                priority -= distance; return priority;
+            }
+            fire(target) {
+                gameState.projectiles.push(new Projectile(this.x, this.y, target, this));
+                for (let i = 0; i < 2 + Math.floor(this.level / 3); i++) { gameState.particles.push(new Particle(this.x, this.y, this.type === 'nature' ? 'nature' : 'magic', {speed:1, life:20})); }
+            }
+            levelUp() {
+                this.level++; this.experience = 0; 
+                this.baseDamage = towerTypes[this.type].damage + Math.floor(towerTypes[this.type].damage * 0.12 * (this.level -1)); 
+                this.baseRange += 3; if (this.baseFireRate > 150) this.baseFireRate -= (this.level % 2 === 0 ? 50: 25); 
+                for (let i = 0; i < 15 + this.level * 3; i++) { gameState.particles.push(new Particle(this.x, this.y, 'star', {life: 40 + this.level * 2, speed: 3, shape:'star'})); }
+                showAchievement(`🌿 Guardian Lvl ${this.level}!`);
+            }
+            draw() {
+                if (!ctx) return; ctx.save(); const displayRange = this.currentRange; 
+                const towerSize = TOWER_BASE_RADIUS + this.level * 0.5; 
+                ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, towerSize, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = darkenColor(this.color, 30); ctx.beginPath(); ctx.arc(this.x, this.y, towerSize * 0.7, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'; ctx.beginPath(); ctx.arc(this.x - towerSize * 0.3, this.y - towerSize * 0.3, towerSize*0.25, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'white'; ctx.font = `bold ${10 + this.level}px Nunito`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(this.level, this.x, this.y);
+                if (this.activeBoosts.some(b => b.type === 'damage')) { ctx.fillStyle = 'rgba(255, 100, 100, 0.8)'; ctx.beginPath(); ctx.arc(this.x, this.y, towerSize + 3, 0, Math.PI * 2); ctx.fill(); }
+                if (this === gameState.selectedTower) {
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
+                    ctx.beginPath(); ctx.arc(this.x, this.y, displayRange, 0, Math.PI * 2); ctx.stroke();
+                    ctx.setLineDash([]); 
+                }
+                ctx.restore();
+            }
+            getUpgradeCost(upgradeType) {
+                const upgradeDef = towerTypes[this.type].upgrades[upgradeType]; if (!upgradeDef) return Infinity; 
+                const currentUpgradeLevel = this.upgrades[upgradeType] || 0;
+                return Math.floor(upgradeDef.cost + (currentUpgradeLevel * (upgradeDef.cost * 0.45))); 
+            }
+            upgrade(upgradeType) {
+                const upgradeDef = towerTypes[this.type].upgrades[upgradeType]; if (!upgradeDef) return false;
+                const currentUpgradeLevel = this.upgrades[upgradeType] || 0; if (currentUpgradeLevel >= upgradeDef.max) return false;
+                const cost = this.getUpgradeCost(upgradeType); if (gameState.gold < cost) return false;
+                gameState.gold -= cost; this.upgrades[upgradeType] = currentUpgradeLevel + 1;
+                this.applyUpgradeEffect(upgradeType, upgradeDef.effect, this.upgrades[upgradeType]);
+                for (let i = 0; i < 15; i++) { gameState.particles.push(new Particle(this.x, this.y, 'nature', {speed:2, life: 25}));}
+                // showAchievement(`${this.type} ${upgradeType} Lvl ${this.upgrades[upgradeType]}`);
+                updateUI(); return true;
+            }
+            applyUpgradeEffect(upgradeType, effectValue, newLevel) {
+                switch (this.type) {
+                    case 'nature': if (upgradeType === 'damage') this.baseDamage += effectValue; else if (upgradeType === 'range') this.baseRange += effectValue; else if (upgradeType === 'speed') this.baseFireRate = Math.max(100, this.baseFireRate + effectValue); break;
+                    case 'magic': if (upgradeType === 'damage') this.baseDamage += effectValue; break;
+                    case 'wind': if (upgradeType === 'speed') this.baseFireRate = Math.max(100, this.baseFireRate + effectValue); break;
+                    case 'earth': if (upgradeType === 'damage') this.baseDamage += effectValue; break;
+                }
+            }
+        }
+
+        function darkenColor(hex, amount) {
+            hex = hex.replace('#', ''); let r = parseInt(hex.substring(0, 2), 16); let g = parseInt(hex.substring(2, 4), 16); let b = parseInt(hex.substring(4, 6), 16);
+            r = Math.max(0, r - amount); g = Math.max(0, g - amount); b = Math.max(0, b - amount);
+            return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+        }
+        
+        class Projectile {
+            constructor(x, y, target, tower) {
+                this.x = x; this.y = y; this.target = target; this.tower = tower;   
+                this.speed = 8 + tower.level * 0.5; this.trail = []; this.damage = tower.currentDamage;
+                if (tower.type === 'wind' && gameState.weather === 'windy') this.speed *= 1.2;
+                this.isCrit = (tower.type === 'wind' && tower.upgrades.crit && Math.random() < tower.upgrades.crit * towerTypes.wind.upgrades.crit.effect);
+                if (this.isCrit) this.damage *= 2; 
+            }
+            update() {
+                if (!this.target || this.target.health <= 0 || !gameState.enemies.includes(this.target)) return false; 
+                this.trail.push({x: this.x, y: this.y, alpha: 1.0});
+                if (this.trail.length > 6 + Math.floor(this.tower.level / 2)) this.trail.shift();
+                this.trail.forEach(p => p.alpha *= 0.85); 
+                const dx = this.target.x - this.x; const dy = this.target.y - this.y; const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < this.speed) { this.hit(); return false; }
+                this.x += (dx / distance) * this.speed; this.y += (dy / distance) * this.speed;
+                return true; 
+            }
+            hit() {
+                const killed = this.target.takeDamage(this.damage, this.tower.type, this.isCrit); this.tower.totalDamage += this.damage;
+                this.applySpecialEffectsOnHit();
+                if (killed) { this.onEnemyKilled(this.target); if (this.target.special === 'dragon') gameState.achievements.add('dragon_slain_flag'); }
+                const hitParticleType = this.isCrit ? 'star' : (this.tower.type === 'nature' ? 'nature' : 'magic');
+                for (let i = 0; i < (this.isCrit ? 10:5) + this.tower.level; i++) { gameState.particles.push(new Particle(this.target.x, this.target.y, hitParticleType, {size: this.isCrit ? 4:2, speed:3, shape: this.isCrit ? 'star':'circle'})); }
+            }
+            applySpecialEffectsOnHit() {
+                const towerType = this.tower.type; const upgrades = this.tower.upgrades;
+                switch (towerType) {
+                    case 'magic': if (upgrades.slow) this.target.applyEffect('slow', 180 * upgrades.slow, towerTypes.magic.upgrades.slow.effect * upgrades.slow); if (upgrades.chain && Math.random() < 0.25 * upgrades.chain) this.performChainLightning(upgrades.chain); break;
+                    case 'wind': if (upgrades.knockback && Math.random() < towerTypes.wind.upgrades.knockback.effect * upgrades.knockback) this.target.performKnockback(15 + upgrades.knockback * 5); break;
+                    case 'earth': if (upgrades.splash) this.performSplashDamage(upgrades.splash); if (upgrades.stun && Math.random() < towerTypes.earth.upgrades.stun.effect * upgrades.stun) this.target.applyEffect('stun', 60 * upgrades.stun); break;
+                }
+            }
+            performChainLightning(chainLevel) {
+                const chainRange = 60 + chainLevel * 15; const chainDamageFactor = 0.4 + chainLevel * 0.1;
+                let currentTarget = this.target; let chainedCount = 0; const maxChains = chainLevel; 
+                for (let i = 0; i < maxChains; i++) {
+                    let nextHitTarget = null; let minDistance = Infinity;
+                    for (let enemy of gameState.enemies) {
+                        if (enemy === currentTarget || enemy.health <= 0 || (this.chainedTargets && this.chainedTargets.has(enemy))) continue;
+                        const dist = Math.sqrt((enemy.x - currentTarget.x)**2 + (enemy.y - currentTarget.y)**2);
+                        if (dist <= chainRange && dist < minDistance) { minDistance = dist; nextHitTarget = enemy; }
+                    }
+                    if (nextHitTarget) {
+                        if (!this.chainedTargets) this.chainedTargets = new Set(); this.chainedTargets.add(nextHitTarget);
+                        const killed = nextHitTarget.takeDamage(this.damage * chainDamageFactor, 'magic_chain'); this.tower.totalDamage += this.damage * chainDamageFactor;
+                        createChainingParticle(currentTarget, nextHitTarget, this.tower.color);
+                        if (killed) this.onEnemyKilled(nextHitTarget); currentTarget = nextHitTarget; chainedCount++;
+                    } else break; 
+                }
+            }
+            performSplashDamage(splashLevel) {
+                const splashRange = 30 + splashLevel * 10; const splashDamageFactor = 0.25 + splashLevel * 0.05;
+                for (let enemy of gameState.enemies) {
+                    if (enemy === this.target || enemy.health <= 0) continue;
+                    const distance = Math.sqrt((enemy.x - this.target.x) ** 2 + (enemy.y - this.target.y) ** 2);
+                    if (distance <= splashRange) {
+                        const killed = enemy.takeDamage(this.damage * splashDamageFactor, 'splash'); this.tower.totalDamage += this.damage * splashDamageFactor;
+                        gameState.particles.push(new Particle(enemy.x, enemy.y, 'fire', {size:3, speed:1.5, life: 20}));
+                        if (killed) this.onEnemyKilled(enemy);
+                    }
+                }
+            }
+            onEnemyKilled(enemy) {
+                gameState.gold += enemy.reward; gameState.experience += enemy.reward; 
+                gameState.enemiesKilledThisWave++; gameState.totalEnemiesKilled++; gameState.combo++;
+                this.tower.experience += enemy.reward; this.tower.kills++;
+                if (gameState.combo > 0 && gameState.combo % 5 === 0) { 
+                    const comboBonus = Math.floor(gameState.combo / 5) * (5 + Math.floor(gameState.wave/5)); 
+                    gameState.gold += comboBonus; showAchievement(`💰 Combo +${comboBonus}G! (${gameState.combo}x)`);
+                }
+                gameState.maxCombo = Math.max(gameState.maxCombo, gameState.combo);
+                const index = gameState.enemies.indexOf(enemy); if (index > -1) gameState.enemies.splice(index, 1);
+                for (let i = 0; i < 6 + enemy.size / 3; i++) { gameState.particles.push(new Particle(enemy.x, enemy.y, enemy.special === 'boss' ? 'star' : 'magic', {speed: 2.5, life: 30, shape: enemy.special === 'boss' ? 'star':'circle'})); }
+                checkAchievements(); updateUI(); 
+            }
+            draw() {
+                if (!ctx) return; ctx.save();
+                this.trail.forEach((p, index) => {
+                    ctx.fillStyle = `rgba(255, 215, 0, ${p.alpha * 0.4})`; 
+                    ctx.beginPath(); ctx.arc(p.x, p.y, (index / this.trail.length) * (this.isCrit ? 4:3) + 1, 0, Math.PI * 2); ctx.fill();
+                });
+                ctx.fillStyle = this.isCrit ? '#FF3030' : (this.tower.color ||'#FFD700'); 
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.isCrit ? 7 : 5, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowColor = this.isCrit ? '#FF4500' : this.tower.color; ctx.shadowBlur = this.isCrit ? 18 : 12; ctx.fill(); 
+                ctx.restore(); 
+            }
+        }
+        function createChainingParticle(startEntity, endEntity, color = 'rgba(0, 191, 255, 0.8)') {
+            const particle = {
+                startX: startEntity.x, startY: startEntity.y, endX: endEntity.x, endY: endEntity.y, life: 20, color: color,
+                update: function() { this.life--; return this.life > 0; },
+                draw: function(pCtxToUse) {
+                    if (!pCtxToUse) return; pCtxToUse.save();
+                    pCtxToUse.globalAlpha = Math.max(0, this.life / 20); pCtxToUse.strokeStyle = this.color;
+                    pCtxToUse.lineWidth = 1 + Math.random()*2; pCtxToUse.beginPath(); pCtxToUse.moveTo(this.startX, this.startY);
+                    const midX = (this.startX + this.endX) / 2 + (Math.random() - 0.5) * 10;
+                    const midY = (this.startY + this.endY) / 2 + (Math.random() - 0.5) * 10;
+                    pCtxToUse.quadraticCurveTo(midX, midY, this.endX, this.endY); pCtxToUse.stroke(); pCtxToUse.restore();
+                }
+            };
+            gameState.particles.push(particle);
+        }
+        function createBurstParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2; const speed = Math.random() * 3 + 2;
+                gameState.particles.push(new Particle(x, y, 'star', { shape: 'star', vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, color: color, size: Math.random() * 5 + 3, life: Math.random() * 30 + 30, gravity: 0.05, drag: 0.96 }));
+            }
+        }
+        
+        // --- Drawing Functions ---
+        function drawBackground() {
+            if (!ctx) { console.warn("drawBackground: ctx not available"); return; }
+            const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height); 
+            if (gameState.timeOfDay === 'day') { grad.addColorStop(0, '#87CEEB'); grad.addColorStop(0.7, '#B0E0E6'); grad.addColorStop(1, '#98FB98'); }
+            else { grad.addColorStop(0, '#000030'); grad.addColorStop(0.5, '#2c3e50'); grad.addColorStop(1, '#34495E'); }
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (gameState.timeOfDay === 'night') drawStars();
+            drawClouds(); drawDistantMountains(); drawTrees();
+        }
+        function drawStars() { 
+             if (!ctx) return;
+            ctx.save();
+            for (let i = 0; i < 100; i++) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.5 + 0.3})`;
+                ctx.beginPath();
+                ctx.arc(Math.random() * canvas.width, Math.random() * canvas.height * 0.6, Math.random() * 1.5 + 0.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+        function drawDistantMountains() {
+            if (!ctx) return;
+            ctx.save();
+            const mountainColors = gameState.timeOfDay === 'day' ? ['#A0A0C0', '#8080A0', '#606080'] : ['#303050', '#202040', '#101030'];
+            for (let i = 0; i < 3; i++) {
+                ctx.fillStyle = mountainColors[i];
+                ctx.beginPath();
+                ctx.moveTo(-50, canvas.height - 100 - i * 40 + Math.sin(0) * 20);
+                for (let x = 0; x < canvas.width + 100; x += 50) {
+                    ctx.lineTo(x, canvas.height - 150 - i * 50 + Math.sin(x * 0.01 + i) * (40 - i * 10));
+                }
+                ctx.lineTo(canvas.width + 50, canvas.height);
+                ctx.lineTo(-50, canvas.height);
+                ctx.closePath();
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+        function drawClouds() {
+            if (!ctx) return;
+            ctx.save();
+            const cloudColor = gameState.timeOfDay === 'day' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(100, 100, 120, 0.6)';
+            ctx.fillStyle = cloudColor;
+            const time = Date.now() * 0.00005; 
+            for (let i = 0; i < 5 + (gameState.weather === 'rainy' ? 3 : 0) ; i++) {
+                const baseX = (i * 200 + time * 2000) % (canvas.width + 200) - 100;
+                const baseY = 50 + i * 10 + Math.sin(time * 2 + i) * 20;
+                const cloudSize = 30 + Math.sin(i) * 10;
+                ctx.beginPath();
+                ctx.arc(baseX, baseY, cloudSize, 0, Math.PI * 2);
+                ctx.arc(baseX + cloudSize * 0.8, baseY, cloudSize * 1.2, 0, Math.PI * 2);
+                ctx.arc(baseX + cloudSize * 1.8, baseY, cloudSize, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+        function drawTrees() { 
+            if (!ctx) return;
+            ctx.save();
+            const trunkColor = gameState.timeOfDay === 'day' ? '#8B4513' : '#5D3A1A';
+            const leafColors = gameState.timeOfDay === 'day' 
+                ? ['#228B22', '#2E8B57', '#3CB371'] 
+                : ['#1A4D2E', '#145A32', '#0B5345'];
+            
+            for (let i = 0; i < 15; i++) {
+                const x = i * (canvas.width / 14) - 20 + (Math.random()-0.5)*10;
+                const treeHeight = 80 + Math.random() * 40;
+                const trunkWidth = 10 + Math.random() * 5;
+                const crownRadius = 25 + Math.random() * 10;
+                const yBase = canvas.height - 80 + (Math.random()-0.5)*10;
+
+                ctx.fillStyle = trunkColor;
+                ctx.fillRect(x - trunkWidth / 2, yBase - treeHeight * 0.4, trunkWidth, treeHeight * 0.4);
+                
+                ctx.fillStyle = leafColors[i % leafColors.length];
+                ctx.beginPath();
+                ctx.ellipse(x, yBase - treeHeight * 0.4 - crownRadius * 0.8, crownRadius, crownRadius * 1.2, Math.random()*0.2-0.1, 0, Math.PI * 2);
+                ctx.fill();
+                 if (gameState.timeOfDay === 'day') {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+                    ctx.beginPath();
+                    ctx.ellipse(x - crownRadius *0.3, yBase - treeHeight * 0.4 - crownRadius, crownRadius*0.5, crownRadius * 0.7, Math.random()*0.2-0.1, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            ctx.restore();
+        }
+        function drawPath() {
+            if (!ctx) { console.warn("drawPath: ctx not available"); return; }
+            ctx.strokeStyle = '#D2691E'; ctx.lineWidth = 35; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) { ctx.lineTo(path[i].x, path[i].y); }
+            ctx.stroke();
+            ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 40; ctx.globalCompositeOperation = 'destination-over';
+            ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) { ctx.lineTo(path[i].x, path[i].y); }
+            ctx.stroke(); ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = '#CD853F';
+            for (let i = 0; i < path.length - 1; i++) {
+                const segments = 5;
+                for (let j = 0; j < segments; j++) {
+                    const t = j / segments;
+                    const x = path[i].x + (path[i+1].x - path[i].x) * t; const y = path[i].y + (path[i+1].y - path[i].y) * t;
+                    for (let k = 0; k < 3; k++) {
+                        const stoneX = x + (Math.random() - 0.5) * 20; const stoneY = y + (Math.random() - 0.5) * 20;
+                        ctx.beginPath(); ctx.arc(stoneX, stoneY, Math.random()*2+1, 0, Math.PI * 2); ctx.fill();
+                    }
+                }
+            }
+        }
+        
+        // --- Gameplay Logic ---
+        function getEnemiesForWave(waveNum) {
+             const baseCount = 5 + Math.floor(waveNum / 2);
+            let numEnemies = baseCount + waveNum * 1.5; 
+            if (waveNum % 5 === 0 && waveNum >= 5) numEnemies = Math.max(1, Math.floor(numEnemies /3)); 
+            numEnemies = Math.floor(numEnemies);
+
+            let comp = [];
+            const types = ['imp'];
+            if (waveNum >= 2) types.push('goblin'); if (waveNum >= 3) types.push('orc');
+            if (waveNum >= 4) types.push('troll'); if (waveNum >= 6) types.push('shadow');
+            if (waveNum >= 7 && waveNum % 5 !== 0) types.push('phantom'); 
+            if (waveNum >= 8 && waveNum % 5 !== 0) types.push('golem');
+            
+            for (let i = 0; i < numEnemies; i++) {
+                let typeKey = types[Math.floor(Math.random() * types.length)];
+                if (i > numEnemies * 0.7 && waveNum > 5 && Math.random() > 0.5) {
+                    const strongerTypes = types.filter(t => t === 'orc' || t === 'troll' || t === 'golem' || t === 'phantom');
+                    if (strongerTypes.length > 0) typeKey = strongerTypes[Math.floor(Math.random() * strongerTypes.length)];
+                }
+                 comp.push(typeKey);
+            }
+            if (waveNum % 5 === 0 && waveNum >= 5) {
+                if (waveNum % 10 === 0 && waveNum >= 10 && enemyTypes.dragon) { comp.push('dragon'); }
+                else if (enemyTypes.golem) {comp.push('golem');}
+                
+                if(waveNum > 10 && waveNum % 10 !== 0 && enemyTypes.dragon && Math.random() < 0.3) comp.push('dragon'); 
+            }
+            return comp;
+        }
+        function spawnEnemyWave() { 
+            const enemyTypesForWave = getEnemiesForWave(gameState.wave);
+            gameState.expectedEnemiesThisWave = enemyTypesForWave.length; 
+            gameState.enemiesKilledThisWave = 0; 
+            gameState.enemiesSpawnedThisWave = 0;
+            
+            let spawnIndex = 0;
+            const baseInt = 1000; const minInt = 150;
+            const intReduction = gameState.wave * 20;
+            const spawnIntTime = Math.max(minInt, baseInt - intReduction);
+
+            const spawnInterval = setInterval(() => {
+                if (!gameState.gameRunning || spawnIndex >= enemyTypesForWave.length) {
+                    clearInterval(spawnInterval); return;
+                }
+                gameState.enemies.push(new Enemy(enemyTypesForWave[spawnIndex]));
+                gameState.enemiesSpawnedThisWave++; 
+                spawnIndex++;
+                updateUI();
+            }, spawnIntTime);
+        }
+        function trySpawnPowerUp() { 
+            if (!gameState.waveActive || gameState.powerUpsOnMap.length >= 2) return; 
+            if (Math.random() < gameState.powerUpSpawnChance) { 
+                const keys = Object.keys(powerUpTypes);
+                const typeKey = keys[Math.floor(Math.random() * keys.length)];
+                let spawnX, spawnY, isValid = false;
+                let attempts = 0;
+                while(!isValid && attempts < 50) { 
+                    spawnX = Math.random() * (canvas.width - 100) + 50; 
+                    spawnY = Math.random() * (canvas.height - 100) + 50;
+                    isValid = isValidTowerPosition(spawnX, spawnY, true); // Pass true to ignore tower collision for power-ups
+                    if (isValid) { 
+                        for (const p of gameState.powerUpsOnMap) {
+                            if (Math.sqrt((spawnX - p.x)**2 + (spawnY - p.y)**2) < 100) {
+                                isValid = false; break;
+                            }
+                        }
+                    }
+                    attempts++;
+                }
+                if (isValid) { gameState.powerUpsOnMap.push(new PowerUp(spawnX, spawnY, typeKey)); }
+            }
+        }
+        function startWave() { 
+             if (gameState.waveActive || !gameState.gameRunning || gameState.enemies.length > 0) return;
+            gameState.waveActive = true;
+            gameState.enemiesSpawnedThisWave = 0; 
+            gameState.enemiesKilledThisWave = 0;
+            gameState.combo = 0; 
+            const waveBtn = document.getElementById('waveBtn');
+            if(waveBtn) { waveBtn.disabled = true; waveBtn.textContent = '🌊 Wave in Progress...';}
+            spawnEnemyWave();
+            if (gameState.wave > 1 && gameState.wave % 2 === 0) changeWeather(); 
+            updateUI();
+        }
+        function changeWeather() {
+            const weathers = ['sunny', 'rainy', 'windy'];
+            let newWeather = gameState.weather;
+            while(newWeather === gameState.weather) {
+                 newWeather = weathers[Math.floor(Math.random() * weathers.length)];
+            }
+            gameState.weather = newWeather;
+            showAchievement(`Weather changed to: ${gameState.weather.charAt(0).toUpperCase() + gameState.weather.slice(1)}!`);
+            gameState.currentWeatherEffectApplied = false; // Trigger re-application
+            updateUI();
+        }
+        function applyWeatherEffects() {
+            if (gameState.currentWeatherEffectApplied) return;
+            // Specific effects are applied directly in Enemy/Tower/Projectile update methods based on gameState.weather
+            gameState.currentWeatherEffectApplied = true;
+        }
+        function removeWeatherEffects() { /* Not strictly needed if effects are conditional in updates */ }
+
+        function drawWeatherEffects(pCtxToUse) {
+            if (!pCtxToUse) { console.warn("drawWeatherEffects: particleCtx not available"); return; }
+            if (gameState.weather === 'rainy') {
+                for (let i = 0; i < 15; i++) { if (Math.random() < 0.3 && canvas) { gameState.particles.push(new Particle( Math.random() * canvas.width, Math.random() * -50 - 10, 'rain', {vy: Math.random()*8 + 12, vx: (Math.random()-0.5)*1, life:50, size:1.5, gravity:0, fade:false, shape:'line', color:'rgba(173, 216, 230, 0.6)'} )); }}
+            } else if (gameState.weather === 'windy') {
+                 for (let i = 0; i < 8; i++) { if (Math.random() < 0.2 && canvas) { gameState.particles.push(new Particle( Math.random() < 0.5 ? Math.random() * -50 -10 : canvas.width + Math.random()*50 +10, Math.random() * canvas.height, 'wind', {vx: (Math.random() < 0.5 ? 1 : -1) * (Math.random()*10 + 20), vy: (Math.random()-0.5)*3, life:30, size:0.8, gravity:0, fade:true, shape:'line', color: 'rgba(200, 200, 200, 0.4)'} )); }}
+            }
+        }
+        function selectTower(type) { 
+            if (towerTypes[type] && gameState.gold >= towerTypes[type].cost) { 
+                gameState.selectedTowerType = type; 
+                gameState.selectedTower = null; 
+                if(canvas) canvas.style.cursor = 'crosshair'; 
+                closeUpgradePanel(); 
+            } else { 
+                console.warn("Cannot select tower:", type, "Cost:", towerTypes[type] ? towerTypes[type].cost : "N/A", "Gold:", gameState.gold); 
+                showAchievement("Not enough Spirit Gems!");
+            } 
+            updateUI();
+        }
+        function isValidTowerPosition(x, y, isPowerUp = false) {
+            if (!canvas) return false;
+            // 1. Check canvas boundaries
+            if (x < CANVAS_MARGIN || x > canvas.width - CANVAS_MARGIN || y < CANVAS_MARGIN || y > canvas.height - CANVAS_MARGIN) {
+                return false;
+            }
+
+            // 2. Check path collision
+            for (let i = 0; i < path.length - 1; i++) {
+                if (distanceToLineSegment(x, y, path[i], path[i+1]) < MIN_PATH_DISTANCE) {
+                    return false;
+                }
+            }
+
+            // 3. Check tower collision (only if not placing a power-up)
+            if (!isPowerUp) {
+                for (let tower of gameState.towers) {
+                    const distance = Math.sqrt((x - tower.x)**2 + (y - tower.y)**2);
+                    if (distance < MIN_TOWER_DISTANCE) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        function placeTower(x, y) {
+            if (!gameState.selectedTowerType || !towerTypes[gameState.selectedTowerType]) return;
+            
+            const type = gameState.selectedTowerType;
+            const cost = towerTypes[type].cost;
+
+            if (gameState.gold >= cost && isValidTowerPosition(x, y)) {
+                const newTower = new Tower(x, y, type);
+                gameState.towers.push(newTower);
+                gameState.gold -= cost;
+                gameState.selectedTowerType = null;
+                if(canvas) canvas.style.cursor = 'default';
+                
+                for (let i = 0; i < 20; i++) { // Placement particles
+                    gameState.particles.push(new Particle(x, y, 'nature', {speed: 2, life: 30}));
+                }
+                updateUI();
+            } else if (gameState.gold < cost) {
+                showAchievement("Not enough Spirit Gems!");
+            } else {
+                 showAchievement("Cannot place tower here!");
+            }
+        }
+        function selectTowerForUpgrade(x, y) {
+            for (let tower of gameState.towers) {
+                const clickRadius = TOWER_BASE_RADIUS + tower.level * 0.5 + 5; // Make clickable area slightly larger
+                const distance = Math.sqrt((x - tower.x)**2 + (y - tower.y)**2);
+                if (distance < clickRadius) {
+                    gameState.selectedTower = tower;
+                    gameState.selectedTowerType = null; // Clear pending placement
+                    if(canvas) canvas.style.cursor = 'pointer';
+                    showUpgradePanel(tower);
+                    return true;
+                }
+            }
+            gameState.selectedTower = null; // If no tower clicked, ensure no tower is selected
+            if(canvas) canvas.style.cursor = 'default';
+            closeUpgradePanel();
+            return false;
+        }
+        function showUpgradePanel(tower) {
+            const panel = document.getElementById('upgradePanel');
+            const nameEl = document.getElementById('upgradeTowerName');
+            const optionsEl = document.getElementById('upgradeOptions');
+            
+            if (!panel || !nameEl || !optionsEl || !tower) { console.error("Upgrade panel elements missing or tower not provided"); return; }
+
+            nameEl.innerHTML = `🌿 ${tower.type.charAt(0).toUpperCase() + tower.type.slice(1)} <span style="font-size:0.8em;">(Lvl ${tower.level})</span>`;
+            
+            let html = `<div style="margin-bottom: 8px; font-size: 0.9em;">Kills: ${tower.kills} | Dmg: ${tower.totalDamage.toFixed(0)}</div>`;
+            const towerUpgradeDefs = towerTypes[tower.type].upgrades;
+
+            for (let upgradeKey in towerUpgradeDefs) {
+                const upgradeDef = towerUpgradeDefs[upgradeKey];
+                const currentLevel = tower.upgrades[upgradeKey] || 0;
+                const cost = tower.getUpgradeCost(upgradeKey);
+                const maxed = currentLevel >= upgradeDef.max;
+                
+                html += `
+                    <div style="margin: 6px 0; display: flex; justify-content: space-between; align-items: center;">
+                        <span style="flex-grow: 1;">${upgradeKey.charAt(0).toUpperCase() + upgradeKey.slice(1)} (${currentLevel}/${upgradeDef.max})</span>
+                        <button class="upgrade-btn" 
+                                onclick="upgradeTower('${upgradeKey}')"
+                                title="${upgradeDef.description || ''} Cost: ${cost}G"
+                                ${maxed || gameState.gold < cost ? 'disabled' : ''}>
+                            ${maxed ? 'MAX' : `${cost}G`}
+                        </button>
+                    </div>
+                `;
+            }
+            
+            const sellValue = Math.floor(tower.towerCost * 0.6 + Object.values(tower.upgrades).reduce((sum, lvl, idx) => {
+                const upgradeKey = Object.keys(towerUpgradeDefs)[idx];
+                if(towerUpgradeDefs[upgradeKey]) {
+                    return sum + (tower.getUpgradeCost(upgradeKey) / 2) * lvl * 0.5; // Diminishing returns on upgrade sell
+                }
+                return sum;
+            }, 0));
+
+            html += `
+                <div style="margin-top: 15px; text-align: center;">
+                    <button class="upgrade-btn" onclick="sellTower()" style="background: linear-gradient(45deg, #E74C3C, #C0392B);">
+                        Sell (${sellValue}G)
+                    </button>
+                </div>
+            `;
+            
+            optionsEl.innerHTML = html;
+            panel.style.display = 'block';
+        }
+        function upgradeTower(upgradeType) {
+            if (gameState.selectedTower && gameState.selectedTower.upgrade(upgradeType)) {
+                showAchievement(`${gameState.selectedTower.type} ${upgradeType} upgraded!`);
+                showUpgradePanel(gameState.selectedTower); // Refresh panel
+                updateUI();
+            } else if (gameState.selectedTower) {
+                 const cost = gameState.selectedTower.getUpgradeCost(upgradeType);
+                 if (gameState.gold < cost) showAchievement("Not enough Spirit Gems for upgrade!");
+                 else showAchievement("Upgrade failed or max level!");
+            }
+        }
+        function sellTower() {
+            if (gameState.selectedTower) {
+                const tower = gameState.selectedTower;
+                const towerUpgradeDefs = towerTypes[tower.type].upgrades;
+                let refund = Math.floor(tower.towerCost * 0.6); // Base sell value
+
+                for (const upgradeKey in tower.upgrades) {
+                    const currentLevel = tower.upgrades[upgradeKey];
+                    if (towerUpgradeDefs[upgradeKey] && currentLevel > 0) {
+                        for(let i=0; i < currentLevel; i++) {
+                             // Calculate cost as if it was at level 'i' to get the cost for that specific level
+                            const costAtLevelI = Math.floor(towerUpgradeDefs[upgradeKey].cost + (i * (towerUpgradeDefs[upgradeKey].cost * 0.45)));
+                            refund += Math.floor(costAtLevelI * 0.3); // Refund a smaller portion of each upgrade level's cost
+                        }
+                    }
+                }
+
+                gameState.gold += refund;
+                
+                const index = gameState.towers.indexOf(tower);
+                if (index > -1) {
+                    gameState.towers.splice(index, 1);
+                }
+                showAchievement(`Tower sold for ${refund}G!`);
+                closeUpgradePanel();
+                updateUI();
+            }
+        }
+        function closeUpgradePanel() { const upEl = document.getElementById('upgradePanel'); if(upEl) upEl.style.display = 'none'; gameState.selectedTower = null; if(canvas && !gameState.selectedTowerType) canvas.style.cursor = 'default'; }
+        
+        function distanceToLineSegment(px, py, p1, p2) {
+            const l2 = (p2.x - p1.x)**2 + (p2.y - p1.y)**2;
+            if (l2 === 0) return Math.sqrt((px - p1.x)**2 + (py - p1.y)**2);
+            let t = ((px - p1.x) * (p2.x - p1.x) + (py - p1.y) * (p2.y - p1.y)) / l2;
+            t = Math.max(0, Math.min(1, t)); // Clamp t to the segment
+            const closestX = p1.x + t * (p2.x - p1.x);
+            const closestY = p1.y + t * (p2.y - p1.y);
+            return Math.sqrt((px - closestX)**2 + (py - closestY)**2);
+        }
+        function checkAchievements() {
+            const achievementsList = [
+                { id: 'first_kill', condition: () => gameState.totalEnemiesKilled >= 1, text: '🎯 First Blood!' },
+                { id: 'wave_5', condition: () => gameState.wave >= 6, text: '🌊 Wave 5 Cleared!' }, // wave is next wave, so >=6 means 5 is done
+                { id: 'combo_10', condition: () => gameState.maxCombo >= 10, text: '🔥 Combo x10 Master!' },
+                { id: 'gold_500', condition: () => gameState.gold >= 500, text: '💰 Gold Hoarder (500G)!' },
+                { id: 'towers_5', condition: () => gameState.towers.length >= 5, text: '🏰 Tower Builder (5)!' },
+                { id: 'level_5', condition: () => gameState.level >= 5, text: '🌟 Guardian Level 5!'},
+                { id: 'dragon_slayer', condition: () => gameState.achievements.has('dragon_slain_flag'), text: '🐉 Dragon Slayer!'}
+            ];
+            achievementsList.forEach(ach => {
+                if (!gameState.achievements.has(ach.id) && ach.condition()) {
+                    gameState.achievements.add(ach.id);
+                    showAchievement(ach.text);
+                }
+            });
+        }
+        function showAchievement(text) { const el = document.getElementById('achievement'); const txtEl = document.getElementById('achievementText'); if(el && txtEl){ txtEl.textContent = text; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3000);} }
+        function checkDailyLoginReward() {
+            const today = new Date().toDateString();
+            if (gameState.lastLoginDate !== today) {
+                const rewardGold = 100 + Math.floor(Math.random() * 51);
+                gameState.gold += rewardGold;
+                localStorage.setItem('forestGuardiansLastLogin', today);
+                gameState.lastLoginDate = today;
+                showAchievement(`🎁 Daily Login! +${rewardGold}G`);
+                updateUI();
+            }
+        }
+        
+        // --- Game Loop and Updates ---
+        let lastUpdateTime = 0;
+        let gameLoopErrorLogged = false; 
+        function gameLoop(timestamp) {
+            if (!ctx || !particleCtx) { 
+                if (!gameLoopErrorLogged) {
+                    console.error("GameLoop: Canvas context not available. Halting game loop.");
+                    gameLoopErrorLogged = true;
+                }
+                return; 
+            }
+            
+            const deltaTime = timestamp - lastUpdateTime;
+            lastUpdateTime = timestamp;
+
+            if (gameState.health <=0 && gameState.gameRunning) { gameOver(); }
+            if (gameState.gameRunning) {
+                 updateGame(timestamp, deltaTime); 
+                 drawGame();
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        function updateGame(currentTime, deltaTime) { 
+            if (!gameState.gameRunning) return;
+            
+            if (!gameState.currentWeatherEffectApplied) applyWeatherEffects();
+            
+            gameState.powerUpsOnMap.forEach(p => p.update()); 
+            gameState.powerUpsOnMap = gameState.powerUpsOnMap.filter(p => p.lifespan > 0);
+            if(gameState.waveActive) trySpawnPowerUp();
+
+            for (let i = gameState.particles.length - 1; i >= 0; i--) {
+                const p = gameState.particles[i];
+                if (typeof p.update === 'function') { if (!p.update()) gameState.particles.splice(i, 1); }
+                else { p.life = (p.life || 0) -1; if(p.life <=0) gameState.particles.splice(i,1); }
+            }
+            for (let i = gameState.enemies.length - 1; i >= 0; i--) {
+                const enemy = gameState.enemies[i]; enemy.update(currentTime); 
+                if (enemy.pathIndex >= path.length - 1) {
+                    gameState.health -= (enemy.special === 'boss' ? 25 : (enemy.special === 'golem' ? 15: 10)); 
+                    gameState.enemies.splice(i, 1); gameState.combo = 0; showAchievement("💔 Life Force Lost!");
+                    if (gameState.health <= 0) { gameState.health = 0; updateUI(); return; }
+                }
+            }
+            gameState.towers.forEach(t => t.update(currentTime));
+            for (let i = gameState.projectiles.length - 1; i >= 0; i--) { if (!gameState.projectiles[i].update()) gameState.projectiles.splice(i, 1); }
+            
+            if (gameState.waveActive && gameState.enemies.length === 0 && gameState.enemiesSpawnedThisWave >= gameState.expectedEnemiesThisWave && gameState.expectedEnemiesThisWave > 0 ) {
+                gameState.waveActive = false; gameState.wave++;
+                const waveBonus = 75 + gameState.wave * 20; gameState.gold += waveBonus; gameState.experience += waveBonus / 3; 
+                showAchievement(`🎉 Wave ${gameState.wave - 1} Cleared! +${waveBonus}G`);
+                const waveBtn = document.getElementById('waveBtn'); if(waveBtn){ waveBtn.disabled = false; waveBtn.textContent = '🌊 Summon Next Wave';}
+                const expNeeded = gameState.level * 150 + (gameState.level-1)*75; 
+                if (gameState.experience >= expNeeded) {
+                    gameState.level++; gameState.experience -= expNeeded; gameState.gold += 75 + gameState.level * 15; 
+                    showAchievement(`🌟 Guardian Level ${gameState.level}!`);
+                }
+                 gameState.expectedEnemiesThisWave = 0; // Reset for next wave
+            }
+            updateUI();
+        }
+        
+        function drawGame() {
+            if (!ctx || !particleCtx) { console.warn("drawGame: Contexts not available."); return; }
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particleCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+            
+            drawBackground();       
+            drawPath();       
+            drawWeatherEffects(particleCtx); 
+            
+            gameState.towers.forEach(t => t.draw());
+            gameState.enemies.forEach(e => e.draw());
+            gameState.projectiles.forEach(p => p.draw());
+            gameState.particles.forEach(p => { if (typeof p.draw === 'function') p.draw(particleCtx); });
+            
+            if (gameState.selectedTowerType && mouseX !== undefined && mouseY !== undefined && towerTypes[gameState.selectedTowerType]) {
+                const canPlace = isValidTowerPosition(mouseX, mouseY);
+                const towerColor = canPlace ? 'rgba(144, 238, 144, 0.5)' : 'rgba(255, 105, 97, 0.5)'; // Greenish for valid, reddish for invalid
+                const towerRangeColor = canPlace ? 'rgba(255, 255, 255, 0.35)' : 'rgba(200, 200, 200, 0.25)';
+                ctx.fillStyle = towerColor; ctx.beginPath(); ctx.arc(mouseX, mouseY, TOWER_BASE_RADIUS, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = towerRangeColor; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+                ctx.beginPath(); ctx.arc(mouseX, mouseY, towerTypes[gameState.selectedTowerType].range, 0, Math.PI * 2); ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+        
+        function updateUI() { 
+            const el = (id) => document.getElementById(id); // Helper
+            if(el('health')) el('health').textContent = Math.max(0, gameState.health); // Ensure health doesn't go below 0 on UI
+            if(el('gold')) el('gold').textContent = gameState.gold;
+            if(el('wave')) el('wave').textContent = gameState.wave;
+            if(el('enemies')) el('enemies').textContent = `${gameState.enemies.length} (K:${gameState.enemiesKilledThisWave}/${gameState.expectedEnemiesThisWave > 0 ? gameState.expectedEnemiesThisWave : gameState.enemiesSpawnedThisWave })`;
+            if(el('experience')) el('experience').textContent = gameState.experience;
+            if(el('level')) el('level').textContent = gameState.level;
+            if(el('combo')) el('combo').textContent = `${gameState.combo}x`;
+
+            const weatherText = gameState.weather.charAt(0).toUpperCase() + gameState.weather.slice(1);
+            if(el('weatherStatus')) el('weatherStatus').textContent = weatherText;
+            const weatherIconSpan = el('weatherIcon');
+            if(weatherIconSpan) {
+                if (gameState.weather === 'sunny') weatherIconSpan.textContent = '☀️';
+                else if (gameState.weather === 'rainy') weatherIconSpan.textContent = '🌧️';
+                else if (gameState.weather === 'windy') weatherIconSpan.textContent = '💨';
+            }
+            if(el('dailyQuestText')) el('dailyQuestText').textContent = gameState.dailyQuestText;
+            
+            for (let type in towerTypes) {
+                const btn = document.querySelector(`.tower-btn[onclick="selectTower('${type}')"]`);
+                if (btn) btn.disabled = gameState.gold < towerTypes[type].cost || gameState.waveActive || gameState.selectedTowerType === type;
+            }
+            const waveBtn = el('waveBtn');
+            if (waveBtn) {
+                 waveBtn.disabled = gameState.waveActive || (gameState.enemies.length > 0 && !gameState.waveActive && gameState.enemiesSpawnedThisWave < gameState.expectedEnemiesThisWave) || gameState.selectedTowerType !== null; 
+                 if (gameState.waveActive) {
+                    waveBtn.textContent = '🌊 Wave in Progress...';
+                 } else if (gameState.enemies.length > 0 && gameState.enemiesSpawnedThisWave < gameState.expectedEnemiesThisWave) {
+                    waveBtn.textContent = '⏳ Clearing...';
+                 } else {
+                    waveBtn.textContent = '🌊 Summon Next Wave';
+                 }
+            }
+            if (gameState.selectedTower) { showUpgradePanel(gameState.selectedTower); } // Refresh upgrade panel if gold changes
+        }
+        
+        function gameOver() { 
+            gameState.gameRunning = false;
+            const el = (id) => document.getElementById(id);
+            if(el('finalWave')) el('finalWave').textContent = gameState.wave;
+            if(el('finalExp')) el('finalExp').textContent = gameState.experience;
+            if(el('finalCombo')) el('finalCombo').textContent = gameState.maxCombo;
+            const gameOverEl = el('gameOver'); if(gameOverEl) gameOverEl.style.display = 'flex'; 
+        }
+        function restartGame() {
+             gameState = {
+                health: 100, gold: 200, wave: 1, experience: 0, level: 1, combo: 0, maxCombo: 0,
+                enemies: [], towers: [], projectiles: [], particles: [], powerUpsOnMap: [],
+                selectedTowerType: null, selectedTower: null, gameRunning: true, waveActive: false,
+                enemiesSpawnedThisWave: 0, enemiesKilledThisWave: 0, expectedEnemiesThisWave: 0,
+                totalEnemiesKilled: 0, achievements: new Set(),
+                weather: 'sunny', timeOfDay: 'day', specialEvents: [],
+                lastLoginDate: localStorage.getItem('forestGuardiansLastLogin'), 
+                currentWeatherEffectApplied: false, dailyQuestText: "Vanquish 10 Goblins!", // Reset quest or make dynamic later
+                powerUpSpawnChance: 0.001, activeTowerBoosts: [],
+            };
+            document.querySelectorAll('.power-up-icon').forEach(el => el.remove());
+            const gameOverEl = document.getElementById('gameOver'); if(gameOverEl) gameOverEl.style.display = 'none';
+            closeUpgradePanel();
+            if(canvas) canvas.style.cursor = 'default';
+            updateUI(); 
+            lastUpdateTime = performance.now(); 
+            gameLoopErrorLogged = false; 
+            if(!ctx || !particleCtx) { /* Already handled by DOMContentLoaded */ }
+            else { requestAnimationFrame(gameLoop); } // Ensure loop restarts if it was stopped
+        }
+        
+        let mouseX = 0, mouseY = 0;
+        
+        if (canvas) { 
+            canvas.addEventListener('click', (e) => {
+                if(!ctx || !gameState.gameRunning) return; 
+                const rect = canvas.getBoundingClientRect(); 
+                const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+                if (gameState.selectedTowerType) { placeTower(x, y); } 
+                else { if(!selectTowerForUpgrade(x,y)){ closeUpgradePanel(); } }
+            });
+            canvas.addEventListener('mousemove', (e) => { 
+                if(!ctx) return;
+                const rect = canvas.getBoundingClientRect(); 
+                mouseX = e.clientX - rect.left; mouseY = e.clientY - rect.top; 
+            });
+            canvas.addEventListener('contextmenu', (e) => { 
+                if(!ctx) return;
+                e.preventDefault(); 
+                gameState.selectedTowerType = null; 
+                // gameState.selectedTower = null; // Don't deselect tower on right click if panel is open
+                if (canvas) canvas.style.cursor = 'default'; 
+                // closeUpgradePanel(); // Keep upgrade panel open if a tower is selected
+                updateUI();
+            });
+        } else {
+            console.warn("Canvas not available for event listeners attachment.");
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOMContentLoaded: Initializing game setup.");
+            if(particleCanvas && canvas && canvas.width && canvas.height) { 
+                particleCanvas.width = canvas.width; particleCanvas.height = canvas.height;
+                console.log("Particle canvas dimensions synced with game canvas.");
+            } else {
+                console.error("DOMContentLoaded: Canvas elements or main canvas dimensions not ready for particle canvas setup.");
+            }
+             gameState.lastLoginDate = localStorage.getItem('forestGuardiansLastLogin');
+
+            if (ctx && particleCtx) { 
+                checkDailyLoginReward(); 
+                updateUI(); 
+                lastUpdateTime = performance.now();
+                console.log("DOMContentLoaded: All checks passed. Starting game loop.");
+                requestAnimationFrame(gameLoop); 
+            } else {
+                console.error("DOMContentLoaded: CRITICAL - Canvas contexts not available. Game loop NOT started.");
+                const errDiv = document.createElement('div');
+                errDiv.innerHTML = '<p style="color:red; background:rgba(255,255,255,0.9); padding:20px; text-align:center; font-size:18px; border: 2px solid red; border-radius: 10px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000;">Critical Error: The game could not be initialized. <br>This might be due to issues with graphics rendering in your browser or environment. <br>Please try refreshing the page. If the issue persists, check the browser console for more details.</p>';
+                if(gameContainer) gameContainer.insertBefore(errDiv, gameContainer.firstChild); 
+                else if(document.body) document.body.appendChild(errDiv);
+            }
+        });
+    </script>
+</body>
+</html>
