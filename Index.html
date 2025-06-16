@@ -14,7 +14,11 @@
         }
       }
     </script>
-    <script type="module" src="./index.tsx" defer></script>
+    <!-- Replaced src="./index.tsx" with inline module script -->
+    <script type="module" defer>
+      // Content from index.tsx, effectively:
+      export {};
+    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700&display=swap');
         
@@ -461,11 +465,13 @@
         const CANVAS_MARGIN = 20; // Prevent placement too close to edge
 
         const path = [
-            {x: -30, y: 350}, {x: 80, y: 350}, {x: 120, y: 320}, {x: 160, y: 280},
-            {x: 200, y: 250}, {x: 280, y: 200}, {x: 350, y: 180}, {x: 420, y: 200},
-            {x: 480, y: 250}, {x: 520, y: 300}, {x: 560, y: 350}, {x: 620, y: 400},
-            {x: 680, y: 450}, {x: 750, y: 480}, {x: 820, y: 450}, {x: 870, y: 400},
-            {x: 920, y: 350}, {x: 1030, y: 350}
+            {x: -30, y: 150}, {x: 100, y: 150}, {x: 150, y: 200}, {x: 150, y: 400}, {x: 200, y: 460},
+            {x: 300, y: 460}, {x: 350, y: 400}, {x: 350, y: 150}, {x: 300, y: 100},
+            {x: 400, y: 80}, {x: 500, y: 100}, {x: 550, y: 150}, {x: 550, y: 380},
+            {x: 500, y: 430}, {x: 450, y: 460}, {x: 500, y: 470}, {x: 650, y: 470},
+            {x: 700, y: 460}, {x: 700, y: 250}, {x: 650, y: 200}, {x: 750, y: 150},
+            {x: 850, y: 150}, {x: 900, y: 200}, {x: 900, y: 430}, {x: 850, y: 460},
+            {x: 950, y: 470}, {x: 1030, y: 460}
         ];
         
         const towerTypes = {
@@ -838,20 +844,48 @@
                 return Math.floor(upgradeDef.cost + (currentUpgradeLevel * (upgradeDef.cost * 0.45))); 
             }
             upgrade(upgradeType) {
-                const upgradeDef = towerTypes[this.type].upgrades[upgradeType]; if (!upgradeDef) return false;
-                const currentUpgradeLevel = this.upgrades[upgradeType] || 0; if (currentUpgradeLevel >= upgradeDef.max) return false;
-                const cost = this.getUpgradeCost(upgradeType); if (gameState.gold < cost) return false;
-                gameState.gold -= cost; this.upgrades[upgradeType] = currentUpgradeLevel + 1;
+                const upgradeDef = towerTypes[this.type].upgrades[upgradeType];
+                const currentUpgradeLevel = this.upgrades[upgradeType] || 0;
+                const cost = this.getUpgradeCost(upgradeType);
+
+                console.log(`[Tower.upgrade] ATTEMPT: Upgrading ${this.type}.${upgradeType}. Current Lvl: ${currentUpgradeLevel}, Max: ${upgradeDef ? upgradeDef.max : 'N/A'}. Cost: ${cost}, Gold: ${gameState.gold}`);
+
+                if (!upgradeDef) {
+                    console.error(`[Tower.upgrade] FAIL (Definition Missing): Upgrade definition for ${this.type}.${upgradeType} not found.`);
+                    return false;
+                }
+                if (currentUpgradeLevel >= upgradeDef.max) {
+                    console.warn(`[Tower.upgrade] FAIL (Max Level): ${this.type}.${upgradeType} already at max level (${currentUpgradeLevel}/${upgradeDef.max}).`);
+                    return false;
+                }
+                if (gameState.gold < cost) {
+                    console.warn(`[Tower.upgrade] FAIL (No Gold): Insufficient gold for ${this.type}.${upgradeType}. Cost: ${cost}, Have: ${gameState.gold}.`);
+                    return false;
+                }
+
+                gameState.gold -= cost;
+                this.upgrades[upgradeType] = currentUpgradeLevel + 1;
                 this.applyUpgradeEffect(upgradeType, upgradeDef.effect, this.upgrades[upgradeType]);
+                console.log(`[Tower.upgrade] SUCCESS: ${this.type}.${upgradeType} upgraded to Lvl ${this.upgrades[upgradeType]}. Gold: ${gameState.gold}.`);
                 for (let i = 0; i < 15; i++) { gameState.particles.push(new Particle(this.x, this.y, 'nature', {speed:2, life: 25}));}
-                updateUI(); return true;
+                return true;
             }
             applyUpgradeEffect(upgradeType, effectValue, newLevel) {
                 switch (this.type) {
-                    case 'nature': if (upgradeType === 'damage') this.baseDamage += effectValue; else if (upgradeType === 'range') this.baseRange += effectValue; else if (upgradeType === 'speed') this.baseFireRate = Math.max(100, this.baseFireRate + effectValue); break;
-                    case 'magic': if (upgradeType === 'damage') this.baseDamage += effectValue; break;
-                    case 'wind': if (upgradeType === 'speed') this.baseFireRate = Math.max(100, this.baseFireRate + effectValue); break;
-                    case 'earth': if (upgradeType === 'damage') this.baseDamage += effectValue; break;
+                    case 'nature': 
+                        if (upgradeType === 'damage') this.baseDamage += effectValue; 
+                        else if (upgradeType === 'range') this.baseRange += effectValue; 
+                        else if (upgradeType === 'speed') this.baseFireRate = Math.max(100, this.baseFireRate + effectValue); 
+                        break;
+                    case 'magic': 
+                        if (upgradeType === 'damage') this.baseDamage += effectValue; 
+                        break;
+                    case 'wind': 
+                        if (upgradeType === 'speed') this.baseFireRate = Math.max(100, this.baseFireRate + effectValue); 
+                        break;
+                    case 'earth': 
+                        if (upgradeType === 'damage') this.baseDamage += effectValue; 
+                        break;
                 }
             }
         }
@@ -1163,18 +1197,12 @@
 
             if (waveStartSfxElement) {
                 console.log("startWave: Wave start SFX element found. Attempting to play.");
-                console.log("startWave: SFX Current src:", waveStartSfxElement.currentSrc || "N/A", "Ready state:", waveStartSfxElement.readyState);
                 waveStartSfxElement.currentTime = 0;
-                // Volume is pre-set in DOMContentLoaded, but can be re-applied: waveStartSfxElement.volume = 0.5;
                 const sfxPlayPromise = waveStartSfxElement.play();
                 if (sfxPlayPromise !== undefined) {
-                    sfxPlayPromise.then(_ => {
-                        console.log("startWave: Wave start SFX - play() promise resolved (played successfully).");
-                    }).catch(error => {
+                    sfxPlayPromise.then(_ => {}).catch(error => {
                         console.warn("startWave: Wave start SFX - play() promise rejected. Error:", error);
                     });
-                } else {
-                     console.log("startWave: Wave start SFX - play() did not return a promise.");
                 }
             } else {
                  console.warn("startWave: waveStartSfxElement was null when trying to play.");
@@ -1190,18 +1218,12 @@
             if (gameState.wave > 1 && gameState.wave % 2 === 0) changeWeather(); 
             
             if (audioElement) {
-                console.log(`startWave: Checking background music. Wave: ${gameState.wave}, Paused: ${audioElement.paused}, Muted: ${audioElement.muted}, Ready state: ${audioElement.readyState}`);
                 if (audioElement.paused && !audioElement.muted && gameState.wave === 1) { 
-                    console.log("startWave: Attempting to play background music for the first wave.");
                     const bgPlayPromise = audioElement.play();
                     if (bgPlayPromise !== undefined) {
-                        bgPlayPromise.then(_ => {
-                            console.log("startWave: Background music - play() promise resolved (started successfully).");
-                        }).catch(error => {
+                        bgPlayPromise.then(_ => {}).catch(error => {
                             console.warn("startWave: Background music - play() promise rejected. Error:", error);
                         });
-                    } else {
-                        console.log("startWave: Background music - play() did not return a promise.");
                     }
                 }
             } else {
@@ -1213,7 +1235,7 @@
             const weathers = ['sunny', 'rainy', 'windy'];
             let newWeather = gameState.weather;
             while(newWeather === gameState.weather) {
-                 newWeather = weathers[Math.floor(Math.random() * weathers.length)];
+                 newWeather = weathers[Math.floor(Math.random() * types.length)];
             }
             gameState.weather = newWeather;
             showAchievement(`Weather changed to: ${gameState.weather.charAt(0).toUpperCase() + gameState.weather.slice(1)}!`);
@@ -1273,16 +1295,24 @@
             for (let tower of gameState.towers) {
                 const clickRadius = TOWER_BASE_RADIUS + tower.level * 0.5 + 5;
                 if (Math.sqrt((x - tower.x)**2 + (y - tower.y)**2) < clickRadius) {
-                    gameState.selectedTower = tower; gameState.selectedTowerType = null; 
-                    if(canvas) canvas.style.cursor = 'pointer'; showUpgradePanel(tower); return true;
+                    gameState.selectedTower = tower;
+                    console.log(`[selectTowerForUpgrade] Selected tower: ${tower.type} at ${tower.x},${tower.y}. Calling showUpgradePanel.`);
+                    gameState.selectedTowerType = null; 
+                    if(canvas) canvas.style.cursor = 'pointer'; 
+                    showUpgradePanel(tower); 
+                    return true;
                 }
             }
             gameState.selectedTower = null; if(canvas) canvas.style.cursor = 'default'; closeUpgradePanel(); return false;
         }
         function showUpgradePanel(tower) {
+            console.log(`[showUpgradePanel] Called for tower: ${tower ? tower.type : 'NULL TOWER'}. Current gold: ${gameState.gold}`);
             const panel = document.getElementById('upgradePanel'); const nameEl = document.getElementById('upgradeTowerName');
             const optionsEl = document.getElementById('upgradeOptions');
-            if (!panel || !nameEl || !optionsEl || !tower) { console.error("Upgrade panel elements missing or tower not provided"); return; }
+            if (!panel || !nameEl || !optionsEl || !tower) { 
+                console.error("[showUpgradePanel] Upgrade panel elements missing or tower not provided. Tower:", tower); 
+                return; 
+            }
             nameEl.innerHTML = `🌿 ${tower.type.charAt(0).toUpperCase() + tower.type.slice(1)} <span style="font-size:0.8em;">(Lvl ${tower.level})</span>`;
             let html = `<div style="margin-bottom: 8px; font-size: 0.9em;">Kills: ${tower.kills} | Dmg: ${tower.totalDamage.toFixed(0)}</div>`;
             const towerUpgradeDefs = towerTypes[tower.type].upgrades;
@@ -1292,7 +1322,8 @@
                 html += `
                     <div style="margin: 6px 0; display: flex; justify-content: space-between; align-items: center;">
                         <span style="flex-grow: 1;">${upgradeKey.charAt(0).toUpperCase() + upgradeKey.slice(1)} (${currentLevel}/${upgradeDef.max})</span>
-                        <button class="upgrade-btn" onclick="upgradeTower('${upgradeKey}')"
+                        <button class="upgrade-btn" 
+                                data-upgrade-key="${upgradeKey}"
                                 title="${upgradeDef.description || ''} Cost: ${cost}G"
                                 ${maxed || gameState.gold < cost ? 'disabled' : ''}>
                             ${maxed ? 'MAX' : `${cost}G`}
@@ -1311,22 +1342,44 @@
             }
             html += `
                 <div style="margin-top: 15px; text-align: center;">
-                    <button class="upgrade-btn" onclick="sellTower()" style="background: linear-gradient(45deg, #E74C3C, #C0392B);">
+                    <button class="upgrade-btn" data-action="sell" style="background: linear-gradient(45deg, #E74C3C, #C0392B);">
                         Sell (${refund}G)
                     </button>
                 </div>`;
             optionsEl.innerHTML = html; panel.style.display = 'block';
         }
+        
         function upgradeTower(upgradeType) {
-            if (gameState.selectedTower && gameState.selectedTower.upgrade(upgradeType)) {
-                showAchievement(`${gameState.selectedTower.type} ${upgradeType} upgraded!`);
-                showUpgradePanel(gameState.selectedTower); updateUI();
-            } else if (gameState.selectedTower) {
-                 const cost = gameState.selectedTower.getUpgradeCost(upgradeType);
-                 if (gameState.gold < cost) showAchievement("Not enough Spirit Gems for upgrade!");
-                 else showAchievement("Upgrade failed or max level!");
+            console.log(`[Global upgradeTower] Called for type: '${upgradeType}' on selected tower: ${gameState.selectedTower ? gameState.selectedTower.type : 'NONE'}`);
+            if (gameState.selectedTower) {
+                const success = gameState.selectedTower.upgrade(upgradeType);
+                if (success) {
+                    showAchievement(`${gameState.selectedTower.type} ${upgradeType} upgraded!`);
+                } else {
+                    const towerSpecificUpgradeDef = towerTypes[gameState.selectedTower.type].upgrades[upgradeType];
+                    if (towerSpecificUpgradeDef) {
+                        const currentTowerUpgradeLevel = gameState.selectedTower.upgrades[upgradeType] || 0;
+                        const costForThisUpgrade = gameState.selectedTower.getUpgradeCost(upgradeType);
+                        if (currentTowerUpgradeLevel >= towerSpecificUpgradeDef.max) {
+                            showAchievement("Upgrade max level reached!");
+                        } else if (gameState.gold < costForThisUpgrade) {
+                            showAchievement("Not enough Spirit Gems for upgrade!");
+                        } else {
+                            showAchievement("Upgrade failed. See console for details.");
+                        }
+                    } else {
+                         showAchievement(`Upgrade '${upgradeType}' definition not found for this tower type.`);
+                    }
+                }
+                showUpgradePanel(gameState.selectedTower); 
+                updateUI(); 
+            } else {
+                console.error("[Global upgradeTower] Error: gameState.selectedTower is null. Cannot upgrade.");
+                showAchievement("No tower selected for upgrade!");
+                updateUI(); 
             }
         }
+
         function sellTower() {
             if (gameState.selectedTower) {
                 const tower = gameState.selectedTower; const towerUpgradeDefs = towerTypes[tower.type].upgrades;
@@ -1381,24 +1434,17 @@
             }
             const muteBtn = document.getElementById('muteBtn');
             if (audioElement.muted) {
-                console.log("toggleMusic: Unmuting audio. Current state: Paused -", audioElement.paused, ", ReadyState -", audioElement.readyState);
                 audioElement.muted = false;
                 if(muteBtn) muteBtn.textContent = '🔊';
                  if (audioElement.paused) {
-                    console.log("toggleMusic: Audio was paused, attempting to play after unmute.");
                     const playPromise = audioElement.play();
                     if (playPromise !== undefined) {
-                        playPromise.then(_ => {
-                            console.log("toggleMusic: Play after unmute - play() promise resolved.");
-                        }).catch(e => {
+                        playPromise.then(_ => {}).catch(e => {
                             console.warn("toggleMusic: Play after unmute - play() promise rejected. Error:", e);
                         });
-                    } else {
-                        console.log("toggleMusic: Play after unmute - play() did not return a promise.");
                     }
                 }
             } else {
-                console.log("toggleMusic: Muting audio.");
                 audioElement.muted = true;
                 if(muteBtn) muteBtn.textContent = '🔇';
             }
@@ -1484,13 +1530,11 @@
                  else if (gameState.enemies.length > 0 && gameState.enemiesSpawnedThisWave < gameState.expectedEnemiesThisWave) waveBtn.textContent = '⏳ Clearing...';
                  else waveBtn.textContent = '🌊 Summon Next Wave';
             }
-            if (gameState.selectedTower) { showUpgradePanel(gameState.selectedTower); }
         }
         function gameOver() { 
             gameState.gameRunning = false; 
             if (audioElement && !audioElement.paused) {
                 audioElement.pause();
-                console.log("gameOver: Background music paused.");
             }
             const el = (id) => document.getElementById(id);
             if(el('finalWave')) el('finalWave').textContent = gameState.wave; if(el('finalExp')) el('finalExp').textContent = gameState.experience;
@@ -1511,8 +1555,7 @@
             if (audioElement) { 
                 audioElement.currentTime = 0; 
                 if (!audioElement.paused) {
-                    audioElement.pause(); // Ensure it's paused on restart
-                    console.log("restartGame: Background music explicitly paused.");
+                    audioElement.pause();
                 }
             }
             document.querySelectorAll('.power-up-icon').forEach(el => el.remove());
@@ -1538,14 +1581,16 @@
 
             if (audioElement) {
                 audioElement.volume = 0.3;
-                console.log("DOMContentLoaded: Background music element found. Initial volume set to 0.3. ReadyState:", audioElement.readyState);
+                // Ensure it's paused initially if not intended to autoplay before first wave
+                 if(audioElement.readyState >= 2 && !audioElement.paused){ // HAVE_CURRENT_DATA or more
+                    audioElement.pause(); 
+                 }
             } else {
                 console.warn("DOMContentLoaded: Background music element (backgroundMusic) NOT found.");
             }
 
             if (waveStartSfxElement) {
                 waveStartSfxElement.volume = 0.5;
-                 console.log("DOMContentLoaded: Wave start SFX element found. Initial volume set to 0.5. ReadyState:", waveStartSfxElement.readyState);
             } else {
                 console.warn("DOMContentLoaded: Wave start SFX element (waveStartSoundEffect) NOT found.");
             }
@@ -1554,6 +1599,29 @@
             if (muteBtnEl) {
                 muteBtnEl.addEventListener('click', toggleMusic);
             }
+            
+            const upgradePanelElement = document.getElementById('upgradePanel');
+            if (upgradePanelElement) {
+                upgradePanelElement.addEventListener('click', function(event) {
+                    const targetButton = event.target.closest('.upgrade-btn');
+                    if (!targetButton) return; 
+
+                    if (targetButton.dataset.upgradeKey) {
+                        const upgradeKey = targetButton.dataset.upgradeKey;
+                        console.log(`[UpgradePanel Event] Upgrade button clicked for key: ${upgradeKey}`);
+                        upgradeTower(upgradeKey);
+                    } 
+                    else if (targetButton.dataset.action === 'sell') {
+                        console.log("[UpgradePanel Event] Sell button clicked.");
+                        sellTower();
+                    }
+                    // If the click was on the close button (handled by its own onclick)
+                    // or any other part of the panel, no action needed here specifically
+                });
+            } else {
+                console.error("DOMContentLoaded: CRITICAL - upgradePanel element not found for event listener setup.");
+            }
+
 
             if(particleCanvas && canvas && canvas.width && canvas.height) { particleCanvas.width = canvas.width; particleCanvas.height = canvas.height; console.log("Particle canvas dimensions synced with game canvas."); } 
             else { console.error("DOMContentLoaded: Canvas elements or main canvas dimensions not ready for particle canvas setup."); }
@@ -1574,3 +1642,4 @@
     </script>
 </body>
 </html>
+
