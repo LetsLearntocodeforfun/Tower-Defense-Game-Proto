@@ -56,7 +56,24 @@
             justify-content: center;
             align-items: center;
         }
-        
+         #gameContainer.turbo-active-screen::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            box-shadow: inset 0 0 20px 10px rgba(255, 107, 107, 0.7); /* Reddish glow */
+            pointer-events: none;
+            z-index: 999;
+            animation: turboGlow 0.5s infinite alternate;
+        }
+
+        @keyframes turboGlow {
+            from { box-shadow: inset 0 0 15px 8px rgba(255, 100, 100, 0.6); }
+            to { box-shadow: inset 0 0 25px 12px rgba(255, 150, 150, 0.8); }
+        }
+
         canvas { /* General canvas styling */
             border: 3px solid #8B4513;
             border-radius: 15px;
@@ -93,7 +110,7 @@
             min-width: 220px;
         }
         
-        #ui div {
+        #ui div:not(#comboMeterContainer) { /* Exclude comboMeterContainer from this specific rule */
             margin: 6px 0;
             display: flex;
             align-items: center;
@@ -336,6 +353,64 @@
             100% { transform: scale(1); }
         }
 
+        /* Combo Meter Styles */
+        #comboMeterContainer {
+            background-color: rgba(0,0,0,0.4);
+            border-radius: 8px;
+            height: 22px;
+            margin-top: 10px;
+            position: relative;
+            border: 2px solid #D2691E;
+            overflow: hidden;
+            cursor: not-allowed;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+        }
+        #comboMeterFill {
+            background: linear-gradient(90deg, #42A5F5, #2196F3, #1976D2); /* Blue gradient */
+            width: 0%; /* Starts empty */
+            height: 100%;
+            border-radius: 5px; 
+            transition: width 0.2s ease-out, background 0.3s ease;
+        }
+        #comboMeterContainer.ready #comboMeterFill {
+             background: linear-gradient(90deg, #FFCA28, #FFB300, #FF8F00); /* Gold gradient */
+        }
+        #comboMeterContainer.ready {
+            cursor: pointer;
+            border-color: #FFD700;
+            animation: pulseGoldBorder 1s infinite alternate;
+        }
+        #comboMeterContainer.turbo-active #comboMeterFill {
+            background: linear-gradient(90deg, #FF8A65, #FF5722, #E64A19); /* Fiery Orange/Red gradient */
+            animation: turboFillPulse 0.5s infinite alternate;
+        }
+         #comboMeterContainer.turbo-active {
+            border-color: #FF5722;
+        }
+
+        #comboMeterText {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 11px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            pointer-events: none;
+            width: 100%;
+            text-align: center;
+        }
+        @keyframes pulseGoldBorder {
+            from { box-shadow: 0 0 4px #FFD700, inset 0 0 2px #FFD700; }
+            to { box-shadow: 0 0 12px #FFEB3B, inset 0 0 5px #FFD700; }
+        }
+        @keyframes turboFillPulse {
+            from { opacity: 0.85; }
+            to { opacity: 1; }
+        }
+
+
     </style>
 </head>
 <body>
@@ -360,6 +435,10 @@
             <div><span class="icon" style="background: linear-gradient(45deg, #A29BFE, #D6A2E8);"></span>XP: <span id="experience">0</span> | Lvl: <span id="level">1</span></div>
             <div><span class="icon" style="background: linear-gradient(45deg, #FF9A8B, #FF6A88);"></span>Combo: <span id="combo">0</span>x</div>
             <div><span class="icon weather-icon-ui" id="weatherIconContainer"><span id="weatherIcon">☀️</span></span>Weather: <span id="weatherStatus">Sunny</span></div>
+            <div id="comboMeterContainer" title="Fill by defeating enemies! Click when full for TURBO!">
+                <div id="comboMeterFill"></div>
+                <span id="comboMeterText">COMBO POWER</span>
+            </div>
             <div id="musicControls">
                 <button id="muteBtn" title="Mute/Unmute Music">🔊</button>
             </div>
@@ -447,6 +526,9 @@
         let waveStartSfxElement = null; // Declare globally for wave start SFX
 
         // --- Game State and Configuration ---
+        const MAX_COMBO_POINTS = 25; // Enemies to kill for full Turbo meter
+        const TURBO_MODE_DURATION = 10000; // 10 seconds
+
         let gameState = {
             health: 100, gold: 200, wave: 1, experience: 0, level: 1, combo: 0, maxCombo: 0,
             enemies: [], towers: [], projectiles: [], particles: [], powerUpsOnMap: [],
@@ -457,6 +539,9 @@
             lastLoginDate: null, currentWeatherEffectApplied: false,
             dailyQuestText: "Vanquish 10 Goblins!",
             powerUpSpawnChance: 0.001, activeTowerBoosts: [],
+            comboPoints: 0, // For Turbo Meter
+            turboModeActive: false,
+            turboModeEndTime: 0,
         };
         
         const TOWER_BASE_RADIUS = 18; // Used for drawing and basic collision checks
@@ -774,9 +859,24 @@
                 this.activeBoosts = []; this.healingCooldown = 0;
                 this.towerCost = typeData.cost; 
             }
-            get currentDamage() { let dmg = this.baseDamage; this.activeBoosts.forEach(b => { if(b.type === 'damage') dmg *= b.multiplier; }); return dmg; }
-            get currentFireRate() { let fr = this.baseFireRate; this.activeBoosts.forEach(b => { if(b.type === 'fireRate') fr *= b.multiplier; }); return Math.max(100, fr); }
-            get currentRange() { let rng = this.baseRange; if (this.type === 'wind' && gameState.weather === 'rainy') rng *= 0.9; return rng; }
+            get currentDamage() { 
+                let dmg = this.baseDamage; 
+                this.activeBoosts.forEach(b => { if(b.type === 'damage') dmg *= b.multiplier; }); 
+                // Turbo mode does not affect damage directly based on user request.
+                return dmg; 
+            }
+            get currentFireRate() { 
+                let fr = this.baseFireRate; 
+                this.activeBoosts.forEach(b => { if(b.type === 'fireRate') fr *= b.multiplier; }); 
+                if (gameState.turboModeActive) { fr /= 2; }
+                return Math.max(50, fr); // Ensure fire rate doesn't become too fast or zero
+            }
+            get currentRange() { 
+                let rng = this.baseRange; 
+                if (this.type === 'wind' && gameState.weather === 'rainy') rng *= 0.9;
+                if (gameState.turboModeActive) { rng *= 2; }
+                return rng; 
+            }
             update(currentTime) {
                 this.activeBoosts = this.activeBoosts.filter(b => currentTime < b.endTime);
                 if (currentTime - this.lastFired < this.currentFireRate) return;
@@ -830,7 +930,18 @@
                 ctx.fillStyle = darkenColor(this.color, 30); ctx.beginPath(); ctx.arc(this.x, this.y, towerSize * 0.7, 0, Math.PI * 2); ctx.fill();
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'; ctx.beginPath(); ctx.arc(this.x - towerSize * 0.3, this.y - towerSize * 0.3, towerSize*0.25, 0, Math.PI * 2); ctx.fill();
                 ctx.fillStyle = 'white'; ctx.font = `bold ${10 + this.level}px Nunito`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(this.level, this.x, this.y);
-                if (this.activeBoosts.some(b => b.type === 'damage')) { ctx.fillStyle = 'rgba(255, 100, 100, 0.8)'; ctx.beginPath(); ctx.arc(this.x, this.y, towerSize + 3, 0, Math.PI * 2); ctx.fill(); }
+                
+                let auraColor = null;
+                if (this.activeBoosts.some(b => b.type === 'damage')) auraColor = 'rgba(255, 100, 100, 0.8)';
+                if (gameState.turboModeActive) auraColor = 'rgba(255, 165, 0, 0.7)'; // Orange aura for turbo
+
+                if (auraColor) {
+                    ctx.fillStyle = auraColor;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, towerSize + (gameState.turboModeActive ? 4 : 3), 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
                 if (this === gameState.selectedTower) {
                     ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
                     ctx.beginPath(); ctx.arc(this.x, this.y, displayRange, 0, Math.PI * 2); ctx.stroke();
@@ -901,6 +1012,7 @@
                 this.x = x; this.y = y; this.target = target; this.tower = tower;   
                 this.speed = 8 + tower.level * 0.5; this.trail = []; this.damage = tower.currentDamage;
                 if (tower.type === 'wind' && gameState.weather === 'windy') this.speed *= 1.2;
+                 if (gameState.turboModeActive) this.speed *= 1.25; // Projectiles move a bit faster in turbo
                 this.isCrit = (tower.type === 'wind' && tower.upgrades.crit && Math.random() < tower.upgrades.crit * towerTypes.wind.upgrades.crit.effect);
                 if (this.isCrit) this.damage *= 2; 
             }
@@ -962,6 +1074,9 @@
             onEnemyKilled(enemy) {
                 gameState.gold += enemy.reward; gameState.experience += enemy.reward; 
                 gameState.enemiesKilledThisWave++; gameState.totalEnemiesKilled++; gameState.combo++;
+                if (!gameState.turboModeActive && gameState.comboPoints < MAX_COMBO_POINTS) {
+                    gameState.comboPoints++;
+                }
                 this.tower.experience += enemy.reward; this.tower.kills++;
                 if (gameState.combo > 0 && gameState.combo % 5 === 0) { 
                     const comboBonus = Math.floor(gameState.combo / 5) * (5 + Math.floor(gameState.wave/5)); 
@@ -973,15 +1088,109 @@
                 checkAchievements(); updateUI(); 
             }
             draw() {
-                if (!ctx) return; ctx.save();
+                if (!ctx) return;
+                ctx.save();
+
+                // --- Trail ---
                 this.trail.forEach((p, index) => {
-                    ctx.fillStyle = `rgba(255, 215, 0, ${p.alpha * 0.4})`; 
-                    ctx.beginPath(); ctx.arc(p.x, p.y, (index / this.trail.length) * (this.isCrit ? 4:3) + 1, 0, Math.PI * 2); ctx.fill();
+                    let trailBaseColor = [255, 215, 0]; // Default yellow
+                    if (this.tower.type === 'nature') trailBaseColor = [76, 175, 80, 180]; // Green, slightly transparent
+                    else if (this.tower.type === 'magic') trailBaseColor = [186, 104, 200, 150]; // Purple, transparent
+                    else if (this.tower.type === 'wind') trailBaseColor = [79, 195, 247, 120]; // Cyan, very transparent
+                    else if (this.tower.type === 'earth') trailBaseColor = [161, 136, 127, 200]; // Brown, less transparent
+
+                    ctx.fillStyle = `rgba(${trailBaseColor[0]}, ${trailBaseColor[1]}, ${trailBaseColor[2]}, ${p.alpha * (trailBaseColor[3] || 255) / 255 * 0.5 })`;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, (index / this.trail.length) * (this.isCrit ? 3.0 : 2.0) + 0.5, 0, Math.PI * 2);
+                    ctx.fill();
                 });
-                ctx.fillStyle = this.isCrit ? '#FF3030' : (this.tower.color ||'#FFD700'); 
-                ctx.beginPath(); ctx.arc(this.x, this.y, this.isCrit ? 7 : 5, 0, Math.PI * 2); ctx.fill();
-                ctx.shadowColor = this.isCrit ? '#FF4500' : this.tower.color; ctx.shadowBlur = this.isCrit ? 18 : 12; ctx.fill(); 
-                ctx.restore(); 
+
+                // --- Main Projectile ---
+                let mainColor = this.tower.color || '#FFD700';
+                let shadowColor = this.tower.color;
+                let size = this.isCrit ? 7 : 5;
+
+                if (this.tower.type === 'nature') {
+                    mainColor = this.isCrit ? '#A5D6A7' : '#4CAF50';
+                    shadowColor = '#2E7D32';
+                    size = this.isCrit ? 8 : 6;
+                    ctx.fillStyle = mainColor;
+                    ctx.shadowColor = shadowColor;
+                    ctx.shadowBlur = this.isCrit ? 15 : 10;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Leafy detail
+                    ctx.fillStyle = darkenColor(mainColor, 15);
+                    for(let i = 0; i < 3; i++) {
+                        ctx.beginPath();
+                        ctx.ellipse(this.x, this.y, size * 0.8, size * 0.3, Math.PI / 3 * i, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                } else if (this.tower.type === 'magic') {
+                    mainColor = this.isCrit ? '#CE93D8' : '#9C27B0';
+                    shadowColor = '#7B1FA2';
+                    size = this.isCrit ? 7 : 5;
+                    ctx.fillStyle = mainColor;
+                    ctx.shadowColor = shadowColor;
+                    ctx.shadowBlur = this.isCrit ? 18 : 12;
+                    const s = size;
+                    ctx.beginPath();
+                    ctx.moveTo(this.x, this.y - s); // Top
+                    ctx.lineTo(this.x + s * 0.7, this.y - s * 0.1);
+                    ctx.lineTo(this.x + s * 0.3, this.y + s * 0.8);
+                    ctx.lineTo(this.x - s * 0.3, this.y + s * 0.8);
+                    ctx.lineTo(this.x - s * 0.7, this.y - s * 0.1);
+                    ctx.closePath();
+                    ctx.fill();
+
+                } else if (this.tower.type === 'wind') {
+                    mainColor = this.isCrit ? 'rgba(179, 229, 252, 0.9)' : 'rgba(79, 195, 247, 0.75)';
+                    shadowColor = 'rgba(3, 155, 229, 0.5)';
+                    size = this.isCrit ? 5 : 3; 
+                    const length = size * 3;
+                    const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                    
+                    ctx.strokeStyle = mainColor;
+                    ctx.lineWidth = size;
+                    ctx.lineCap = 'round';
+                    ctx.shadowColor = shadowColor;
+                    ctx.shadowBlur = this.isCrit ? 12 : 8;
+                    ctx.beginPath();
+                    ctx.moveTo(this.x - Math.cos(angle) * length / 2, this.y - Math.sin(angle) * length / 2);
+                    ctx.lineTo(this.x + Math.cos(angle) * length / 2, this.y + Math.sin(angle) * length / 2);
+                    ctx.stroke();
+
+                } else if (this.tower.type === 'earth') {
+                    mainColor = this.isCrit ? '#BCAAA4' : '#795548';
+                    shadowColor = '#5D4037';
+                    size = this.isCrit ? 9 : 7;
+                    ctx.fillStyle = mainColor;
+                    ctx.shadowColor = shadowColor;
+                    ctx.shadowBlur = this.isCrit ? 10 : 7;
+                    ctx.beginPath(); // Jagged rock shape
+                    let points = 5; let variance = size * 0.3;
+                    for (let i = 0; i < points; i++) {
+                        let angle = (i / points) * Math.PI * 2;
+                        let r = size + (Math.random() - 0.5) * variance;
+                        let px = this.x + Math.cos(angle) * r;
+                        let py = this.y + Math.sin(angle) * r;
+                        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                } else { 
+                    mainColor = this.isCrit ? '#FF3030' : (this.tower.color || '#FFD700');
+                    shadowColor = this.isCrit ? '#FF4500' : (this.tower.color || '#FF8C00');
+                    ctx.fillStyle = mainColor;
+                    ctx.shadowColor = shadowColor;
+                    ctx.shadowBlur = this.isCrit ? 18 : 12;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
             }
         }
         function createChainingParticle(startEntity, endEntity, color = 'rgba(0, 191, 255, 0.8)') {
@@ -1050,7 +1259,7 @@
             ctx.save();
             const cloudColor = gameState.timeOfDay === 'day' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(100, 100, 120, 0.6)';
             ctx.fillStyle = cloudColor;
-            const time = Date.now() * 0.00005; 
+            const time = Date.now() * 0.00005 * (gameState.turboModeActive ? 2 : 1); // Clouds move faster in turbo
             for (let i = 0; i < 5 + (gameState.weather === 'rainy' ? 3 : 0) ; i++) {
                 const baseX = (i * 200 + time * 2000) % (canvas.width + 200) - 100;
                 const baseY = 50 + i * 10 + Math.sin(time * 2 + i) * 20;
@@ -1235,7 +1444,7 @@
             const weathers = ['sunny', 'rainy', 'windy'];
             let newWeather = gameState.weather;
             while(newWeather === gameState.weather) {
-                 newWeather = weathers[Math.floor(Math.random() * types.length)];
+                 newWeather = weathers[Math.floor(Math.random() * weathers.length)];
             }
             gameState.weather = newWeather;
             showAchievement(`Weather changed to: ${gameState.weather.charAt(0).toUpperCase() + gameState.weather.slice(1)}!`);
@@ -1249,10 +1458,11 @@
         
         function drawWeatherEffects(pCtxToUse) {
             if (!pCtxToUse) { console.warn("drawWeatherEffects: particleCtx not available"); return; }
+            const particleSpeedMultiplier = gameState.turboModeActive ? 1.5 : 1;
             if (gameState.weather === 'rainy') {
-                for (let i = 0; i < 15; i++) { if (Math.random() < 0.3 && canvas) { gameState.particles.push(new Particle( Math.random() * canvas.width, Math.random() * -50 - 10, 'rain', {vy: Math.random()*8 + 12, vx: (Math.random()-0.5)*1, life:50, size:1.5, gravity:0, fade:false, shape:'line', color:'rgba(173, 216, 230, 0.6)'} )); }}
+                for (let i = 0; i < 15; i++) { if (Math.random() < 0.3 && canvas) { gameState.particles.push(new Particle( Math.random() * canvas.width, Math.random() * -50 - 10, 'rain', {vy: (Math.random()*8 + 12) * particleSpeedMultiplier, vx: (Math.random()-0.5)*1, life:50, size:1.5, gravity:0, fade:false, shape:'line', color:'rgba(173, 216, 230, 0.6)'} )); }}
             } else if (gameState.weather === 'windy') {
-                 for (let i = 0; i < 8; i++) { if (Math.random() < 0.2 && canvas) { gameState.particles.push(new Particle( Math.random() < 0.5 ? Math.random() * -50 -10 : canvas.width + Math.random()*50 +10, Math.random() * canvas.height, 'wind', {vx: (Math.random() < 0.5 ? 1 : -1) * (Math.random()*10 + 20), vy: (Math.random()-0.5)*3, life:30, size:0.8, gravity:0, fade:true, shape:'line', color: 'rgba(200, 200, 200, 0.4)'} )); }}
+                 for (let i = 0; i < 8; i++) { if (Math.random() < 0.2 && canvas) { gameState.particles.push(new Particle( Math.random() < 0.5 ? Math.random() * -50 -10 : canvas.width + Math.random()*50 +10, Math.random() * canvas.height, 'wind', {vx: (Math.random() < 0.5 ? 1 : -1) * (Math.random()*10 + 20) * particleSpeedMultiplier, vy: (Math.random()-0.5)*3, life:30, size:0.8, gravity:0, fade:true, shape:'line', color: 'rgba(200, 200, 200, 0.4)'} )); }}
             }
         }
         function selectTower(type) { 
@@ -1414,7 +1624,8 @@
                 { id: 'gold_500', condition: () => gameState.gold >= 500, text: '💰 Gold Hoarder (500G)!' },
                 { id: 'towers_5', condition: () => gameState.towers.length >= 5, text: '🏰 Tower Builder (5)!' },
                 { id: 'level_5', condition: () => gameState.level >= 5, text: '🌟 Guardian Level 5!'},
-                { id: 'dragon_slayer', condition: () => gameState.achievements.has('dragon_slain_flag'), text: '🐉 Dragon Slayer!'}
+                { id: 'dragon_slayer', condition: () => gameState.achievements.has('dragon_slain_flag'), text: '🐉 Dragon Slayer!'},
+                { id: 'turbo_charged', condition: () => gameState.turboModeActive, text: '⚡ TURBO CHARGED! ⚡'}
             ];
             achievementsList.forEach(ach => { if (!gameState.achievements.has(ach.id) && ach.condition()) { gameState.achievements.add(ach.id); showAchievement(ach.text); } });
         }
@@ -1449,6 +1660,17 @@
                 if(muteBtn) muteBtn.textContent = '🔇';
             }
         }
+        function activateTurboMode() {
+            if (gameState.comboPoints >= MAX_COMBO_POINTS && !gameState.turboModeActive) {
+                gameState.turboModeActive = true;
+                gameState.turboModeEndTime = Date.now() + TURBO_MODE_DURATION;
+                gameState.comboPoints = 0; // Reset meter after activation
+                showAchievement("⚡ TURBO MODE ACTIVATED! ⚡");
+                checkAchievements(); // To show turbo charged achievement immediately
+                if(gameContainer) gameContainer.classList.add('turbo-active-screen');
+                updateUI();
+            }
+        }
         
         // --- Game Loop and Updates ---
         let lastUpdateTime = 0; let gameLoopErrorLogged = false; 
@@ -1461,6 +1683,16 @@
         }
         function updateGame(currentTime, deltaTime) { 
             if (!gameState.gameRunning) return;
+
+            if (gameState.turboModeActive && currentTime >= gameState.turboModeEndTime) {
+                gameState.turboModeActive = false;
+                showAchievement("Turbo Mode Faded...");
+                if(gameContainer) gameContainer.classList.remove('turbo-active-screen');
+                // Remove 'turbo_charged' achievement so it can be shown again next time
+                gameState.achievements.delete('turbo_charged'); 
+                updateUI();
+            }
+
             if (!gameState.currentWeatherEffectApplied) applyWeatherEffects();
             gameState.powerUpsOnMap.forEach(p => p.update()); 
             gameState.powerUpsOnMap = gameState.powerUpsOnMap.filter(p => p.lifespan > 0);
@@ -1522,6 +1754,29 @@
                 else if (gameState.weather === 'windy') weatherIconSpan.textContent = '💨';
             }
             if(el('dailyQuestText')) el('dailyQuestText').textContent = gameState.dailyQuestText;
+
+            // Combo Meter UI
+            const comboMeterContainer = el('comboMeterContainer');
+            const comboMeterFill = el('comboMeterFill');
+            const comboMeterText = el('comboMeterText');
+            if (comboMeterContainer && comboMeterFill && comboMeterText) {
+                const fillPercent = Math.min(100, (gameState.comboPoints / MAX_COMBO_POINTS) * 100);
+                comboMeterFill.style.width = `${fillPercent}%`;
+                comboMeterContainer.classList.remove('ready', 'turbo-active');
+
+                if (gameState.turboModeActive) {
+                    comboMeterContainer.classList.add('turbo-active');
+                    const timeLeft = Math.max(0, Math.ceil((gameState.turboModeEndTime - Date.now()) / 1000));
+                    comboMeterText.textContent = `TURBO! ${timeLeft}s`;
+                } else if (gameState.comboPoints >= MAX_COMBO_POINTS) {
+                    comboMeterContainer.classList.add('ready');
+                    comboMeterText.textContent = "CLICK FOR TURBO!";
+                } else {
+                    comboMeterText.textContent = `POWER ${gameState.comboPoints}/${MAX_COMBO_POINTS}`;
+                }
+            }
+
+
             for (let type in towerTypes) { const btn = document.querySelector(`.tower-btn[onclick="selectTower('${type}')"]`); if (btn) btn.disabled = gameState.gold < towerTypes[type].cost || gameState.waveActive || gameState.selectedTowerType === type; }
             const waveBtn = el('waveBtn');
             if (waveBtn) {
@@ -1535,6 +1790,10 @@
             gameState.gameRunning = false; 
             if (audioElement && !audioElement.paused) {
                 audioElement.pause();
+            }
+            if (gameState.turboModeActive) { // End turbo if game over
+                 gameState.turboModeActive = false;
+                 if(gameContainer) gameContainer.classList.remove('turbo-active-screen');
             }
             const el = (id) => document.getElementById(id);
             if(el('finalWave')) el('finalWave').textContent = gameState.wave; if(el('finalExp')) el('finalExp').textContent = gameState.experience;
@@ -1551,6 +1810,9 @@
                 lastLoginDate: localStorage.getItem('forestGuardiansLastLogin'), 
                 currentWeatherEffectApplied: false, dailyQuestText: "Vanquish 10 Goblins!",
                 powerUpSpawnChance: 0.001, activeTowerBoosts: [],
+                comboPoints: 0, 
+                turboModeActive: false,
+                turboModeEndTime: 0,
             };
             if (audioElement) { 
                 audioElement.currentTime = 0; 
@@ -1558,6 +1820,7 @@
                     audioElement.pause();
                 }
             }
+            if(gameContainer) gameContainer.classList.remove('turbo-active-screen');
             document.querySelectorAll('.power-up-icon').forEach(el => el.remove());
             const gameOverEl = document.getElementById('gameOver'); if(gameOverEl) gameOverEl.style.display = 'none';
             closeUpgradePanel(); if(canvas) canvas.style.cursor = 'default'; updateUI(); 
@@ -1581,8 +1844,7 @@
 
             if (audioElement) {
                 audioElement.volume = 0.3;
-                // Ensure it's paused initially if not intended to autoplay before first wave
-                 if(audioElement.readyState >= 2 && !audioElement.paused){ // HAVE_CURRENT_DATA or more
+                 if(audioElement.readyState >= 2 && !audioElement.paused){ 
                     audioElement.pause(); 
                  }
             } else {
@@ -1615,11 +1877,18 @@
                         console.log("[UpgradePanel Event] Sell button clicked.");
                         sellTower();
                     }
-                    // If the click was on the close button (handled by its own onclick)
-                    // or any other part of the panel, no action needed here specifically
                 });
             } else {
                 console.error("DOMContentLoaded: CRITICAL - upgradePanel element not found for event listener setup.");
+            }
+
+            const comboMeterContainer = document.getElementById('comboMeterContainer');
+            if (comboMeterContainer) {
+                comboMeterContainer.addEventListener('click', () => {
+                    if (gameState.gameRunning) {
+                        activateTurboMode();
+                    }
+                });
             }
 
 
@@ -1642,4 +1911,3 @@
     </script>
 </body>
 </html>
-
