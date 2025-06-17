@@ -13,7 +13,7 @@ A fun little tower defense game where you protect the forest from dark spirits u
 
 ## Gameplay
 
-The primary objective in Forest Guardians is to protect the ancient forest from waves of encroaching dark spirits. Players must strategically place various elemental guardian towers along the spirits' path to prevent them from reaching the forest's heart.
+The primary objective in Forest Guardians is to successfully defend the ancient forest through all 10 stages of encroaching dark spirits, culminating in the defeat of the final boss on the 50th wave. Players must strategically place various elemental guardian towers along the spirits' path to prevent them from reaching the forest's heart and depleting your Life Force.
 
 ### Core Mechanics
 
@@ -21,8 +21,12 @@ The primary objective in Forest Guardians is to protect the ancient forest from 
     *   Select a tower type from the "Forest Guardians" menu on the right side of the screen (e.g., 🌿 Nature Spirit, ✨ Magic Crystal). This can be done by clicking one of the tower buttons like "🌿 Nature Spirit ($60)".
     *   Once a tower type is selected, your cursor will change. Click on a valid, unoccupied spot on the game map to place the tower. Placing towers costs Spirit Gems.
     *   You cannot place towers directly on the enemy path or too close to other towers. Valid positions are checked by `isValidTowerPosition`.
-*   **Starting Waves:**
-    *   Click the "🌊 Summon Wave" (or "Summon Next Wave" / "Wave in Progress..." when active) button in the tower menu to call forth the next wave of dark spirits. This action is handled by the `startWave()` function.
+*   **Game Progression and Waves:**
+    *   The game is structured into 10 distinct stages, each presenting a greater challenge than the last.
+    *   Each stage consists of 5 waves of enemies: 4 normal waves followed by 1 significantly more challenging boss wave.
+    *   Waves are initiated by clicking the "🌊 Summon Wave" (or "Summon Next Wave" / "Wave in Progress..." when active) button in the tower menu. This action is handled by the `startWave()` function.
+    *   Both stages and the waves within them become progressively more difficult, introducing tougher enemies or larger numbers.
+    *   Boss waves feature unique and powerful boss enemies (e.g., larger, faster, more health) that serve as a major test at the end of each stage. Defeating all 10 stages, including the final boss on the 50th wave, is the ultimate goal.
     *   Be prepared! Enemies will start moving along the path once a wave is summoned.
 *   **Upgrading and Managing Towers:**
     *   Click directly on a tower you've already placed on the map. This action, handled by `selectTowerForUpgrade(x,y)`, will open the "Tower Upgrades" panel (`upgradePanel`).
@@ -72,6 +76,7 @@ Forest Guardians boasts a variety of features to enhance the gameplay experience
     *   **🏔️ Earth Guardian:** Heavy-hitting towers that can be upgraded to deal splash damage (`upgrades.splash`) and stun enemies (`upgrades.stun`).
 *   **Varied Enemy Waves:** Face a horde of dark spirits, defined in `enemyTypes`, with different attributes and abilities:
     *   Includes Imps (`imp`), Goblins (`goblin` - fast), Orcs (`orc` - tanky), Trolls (`troll` - regenerating health), Shadows (`shadow` - stealthy), Phantoms (`phantom` - phasing ability), Golems (`golem` - armored), and formidable Dragons (`dragon` - boss).
+*   **Structured Campaign with Boss Battles:** Progress through a 10-stage campaign, where each stage consists of 5 waves: 4 waves of increasingly challenging standard enemies, capped off by a formidable 5th wave featuring a unique boss. These bosses vary in their characteristics (e.g., some are exceptionally large and durable, others small and swift, or possess unique resistances), requiring adaptive strategies. Conquering all 10 stages, culminating in the defeat of the final boss on the 50th wave, marks the ultimate victory.
 *   **In-depth Tower Upgrades:** Each tower (managed by the `Tower` class) has multiple upgrade paths defined in `towerTypes[towerType].upgrades`. These allow you to enhance core stats like damage, range, attack speed, and unlock special abilities tailored to its element by spending Spirit Gems.
 *   **Rich Visual Effects:** The game utilizes a `Particle` class to generate various visual effects, including:
     *   Projectile trails and impacts (e.g., `Projectile.draw()`, `Projectile.hit()`).
