@@ -132,6 +132,7 @@
         .wave-icon { background: linear-gradient(45deg, #4ECDC4, #45B7B8); }
         .enemy-icon { background: linear-gradient(45deg, #FF4757, #FF6B7A); }
         .weather-icon-ui { background: linear-gradient(45deg, #87CEEB, #A7D7E9); } /* Example style for weather icon container */
+        .stage-icon { background: linear-gradient(45deg, #DA70D6, #BA55D3 );}
         
         #musicControls {
             margin-top: 10px;
@@ -430,7 +431,8 @@
         <div id="ui">
             <div><span class="icon health-icon"></span>Life Force: <span id="health">100</span></div>
             <div><span class="icon gold-icon"></span>Spirit Gems: <span id="gold">200</span></div>
-            <div><span class="icon wave-icon"></span>Wave: <span id="wave">1</span></div>
+            <div><span class="icon stage-icon">🗺️</span>Stage: <span id="currentStageDisplay">1</span> / <span id="totalStagesDisplay">10</span></div>
+            <div><span class="icon wave-icon"></span>Wave: <span id="wave">1</span> (<span id="waveInStageDisplay">1</span>/5)</div>
             <div><span class="icon enemy-icon"></span>Dark Spirits: <span id="enemies">0</span></div>
             <div><span class="icon" style="background: linear-gradient(45deg, #A29BFE, #D6A2E8);"></span>XP: <span id="experience">0</span> | Lvl: <span id="level">1</span></div>
             <div><span class="icon" style="background: linear-gradient(45deg, #FF9A8B, #FF6A88);"></span>Combo: <span id="combo">0</span>x</div>
@@ -463,8 +465,8 @@
         </div>
         
         <div id="gameOver">
-            <h2>🌙 The Forest Rests 🌙</h2>
-            <p>You protected the forest through <span id="finalWave">0</span> waves</p>
+            <h2 id="gameOverTitle">🌙 The Forest Rests 🌙</h2>
+            <p>You protected the forest through <span id="finalStage">Stage 1</span>, Wave <span id="finalWave">0</span></p>
             <p>Experience Gained: <span id="finalExp">0</span></p>
             <p>Highest Combo: <span id="finalCombo">0</span></p>
             <button id="startBtn" onclick="restartGame()">🌱 Guardian Reborn</button>
@@ -528,9 +530,11 @@
         // --- Game State and Configuration ---
         const MAX_COMBO_POINTS = 25; // Enemies to kill for full Turbo meter
         const TURBO_MODE_DURATION = 10000; // 10 seconds
+        const WAVES_PER_STAGE = 5;
 
         let gameState = {
-            health: 100, gold: 200, wave: 1, experience: 0, level: 1, combo: 0, maxCombo: 0,
+            health: 100, gold: 200, wave: 1, currentStage: 0, totalStages: 10, 
+            experience: 0, level: 1, combo: 0, maxCombo: 0,
             enemies: [], towers: [], projectiles: [], particles: [], powerUpsOnMap: [],
             selectedTowerType: null, selectedTower: null, gameRunning: true, waveActive: false,
             enemiesSpawnedThisWave: 0, enemiesKilledThisWave: 0, expectedEnemiesThisWave: 0,
@@ -539,15 +543,134 @@
             lastLoginDate: null, currentWeatherEffectApplied: false,
             dailyQuestText: "Vanquish 10 Goblins!",
             powerUpSpawnChance: 0.001, activeTowerBoosts: [],
-            comboPoints: 0, // For Turbo Meter
+            comboPoints: 0, 
             turboModeActive: false,
             turboModeEndTime: 0,
         };
         
-        const TOWER_BASE_RADIUS = 18; // Used for drawing and basic collision checks
-        const MIN_PATH_DISTANCE = 35; // How far towers must be from path center
-        const MIN_TOWER_DISTANCE = TOWER_BASE_RADIUS * 2 + 4; // Min distance between tower centers
-        const CANVAS_MARGIN = 20; // Prevent placement too close to edge
+        // Helper function for color manipulation
+        function lightenDarkenColor(col, amt) {
+            let usePound = false;
+            if (col.startsWith("#")) { col = col.slice(1); usePound = true; }
+            const num = parseInt(col, 16);
+            let r = (num >> 16) + amt; if (r > 255) r = 255; else if (r < 0) r = 0;
+            let b = ((num >> 8) & 0x00FF) + amt; if (b > 255) b = 255; else if (b < 0) b = 0; // Fixed: was g, should be b
+            let g_val = (num & 0x0000FF) + amt; if (g_val > 255) g_val = 255; else if (g_val < 0) g_val = 0; // Fixed: was b, should be g
+            // Ensure 2 hex digits
+            const r_hex = r.toString(16).padStart(2, '0');
+            const g_hex = g_val.toString(16).padStart(2, '0');
+            const b_hex = b.toString(16).padStart(2, '0');
+            return (usePound ? "#" : "") + r_hex + g_hex + b_hex; // Fixed order to R G B
+        }
+
+
+        const stageDesigns = [
+            { // Stage 1 (index 0)
+                name: "Verdant Forest",
+                skyGradientDay: ['#87CEEB', '#B0E0E6', '#98FB98'],
+                skyGradientNight: ['#000030', '#2c3e50', '#34495E'],
+                mountainColorsDay: ['#A0A0C0', '#8080A0', '#606080'],
+                mountainColorsNight: ['#303050', '#202040', '#101030'],
+                cloudColorDay: 'rgba(255, 255, 255, 0.8)',
+                cloudColorNight: 'rgba(100, 100, 120, 0.6)',
+                treeTrunkDay: '#8B4513',
+                treeTrunkNight: '#5D3A1A',
+                treeLeafDay: ['#228B22', '#2E8B57', '#3CB371'],
+                treeLeafNight: ['#1A4D2E', '#145A32', '#0B5345'],
+                pathBorderColor: '#8B4513',
+                pathFillColor: '#D2691E',
+                pathStoneColor: '#CD853F',
+                defaultWeather: 'sunny',
+                bossEnemyType: 'golem', 
+                enemyPool: ['imp', 'goblin'] 
+            },
+            { // Stage 2 (index 1)
+                name: "Mystic Twilight Grove",
+                skyGradientDay: ['#4a0080', '#8000ff', '#c864ff'], 
+                skyGradientNight: ['#1a0033', '#330066', '#4d0099'], 
+                mountainColorsDay: ['#504060', '#403050', '#302040'],
+                mountainColorsNight: ['#201030', '#180828', '#100020'],
+                cloudColorDay: 'rgba(200, 180, 220, 0.7)',
+                cloudColorNight: 'rgba(80, 60, 100, 0.5)',
+                treeTrunkDay: '#605070', 
+                treeTrunkNight: '#403050',
+                treeLeafDay: ['#8A2BE2', '#9932CC', '#BA55D3'], 
+                treeLeafNight: ['#4B0082', '#800080', '#9400D3'],
+                pathBorderColor: '#4B0082', 
+                pathFillColor: '#800080',   
+                pathStoneColor: '#9370DB', 
+                defaultWeather: 'sunny', 
+                bossEnemyType: 'phantom',
+                enemyPool: ['goblin', 'orc', 'shadow'],
+                drawExtras: (pCtx, timeOfDay, design) => { 
+                    if (Math.random() < 0.1 && particleCtx) { 
+                         gameState.particles.push(new Particle(
+                            Math.random() * canvas.width, Math.random() * canvas.height,
+                            'magic', { size: Math.random() * 1.5 + 0.5, life: 100 + Math.random() * 100, vx: (Math.random()-0.5)*0.3, vy: (Math.random()-0.5)*0.3, gravity:0, color: '#FFFFE0', shape: 'circle', fade: true }
+                        ));
+                    }
+                }
+            },
+            { // Stage 3 (index 2)
+                name: "Volcanic Wastes",
+                skyGradientDay: ['#FF8C00', '#FFA500', '#FF4500'], 
+                skyGradientNight: ['#4D2B00', '#663300', '#B22222'], 
+                mountainColorsDay: ['#696969', '#808080', '#A9A9A9'], 
+                mountainColorsNight: ['#2F4F4F', '#404040', '#505050'],
+                cloudColorDay: 'rgba(100, 100, 100, 0.7)', 
+                cloudColorNight: 'rgba(50, 50, 50, 0.5)',
+                treeTrunkDay: '#4f4f4f', 
+                treeTrunkNight: '#303030',
+                treeLeafDay: ['#8B0000', '#A52A2A', '#CD5C5C'], 
+                treeLeafNight: ['#500000', '#662020', '#803030'],
+                pathBorderColor: '#400000', 
+                pathFillColor: '#8B0000',   
+                pathStoneColor: '#A0522D', 
+                defaultWeather: 'windy', 
+                bossEnemyType: 'dragon',
+                enemyPool: ['orc', 'troll', 'golem'],
+                drawExtras: (pCtx, timeOfDay, design) => { 
+                    if (Math.random() < 0.2 && particleCtx) {
+                         gameState.particles.push(new Particle(
+                            Math.random() * canvas.width, -10,
+                            'smoke', { size: Math.random() * 2 + 1, life: 150 + Math.random() * 50, vx: (Math.random()-0.5)*1, vy: Math.random()*1 + 0.5, gravity:0.01, color: 'rgba(50,50,50,0.7)', shape: 'circle' }
+                        ));
+                    }
+                    if(ctx) { 
+                        ctx.save();
+                        const mountainTopY = canvas.height - 150 - 2 * 50 + Math.sin(0 * 0.01 + 2) * (40 - 2 * 10); 
+                        for(let i=0; i<3; i++) {
+                            ctx.fillStyle = timeOfDay === 'day' ? 'rgba(80,80,80,0.3)' : 'rgba(40,40,40,0.4)';
+                            ctx.beginPath();
+                            ctx.ellipse(canvas.width * (0.2 + i*0.3) + (Math.random()-0.5)*30, mountainTopY - 20 + (Math.random()-0.5)*20 , 15 + Math.random()*10, 30 + Math.random()*15, (Math.random()-0.5)*0.2, 0, Math.PI*2);
+                            ctx.fill();
+                        }
+                        ctx.restore();
+                    }
+                }
+            }
+        ];
+        // Fill remaining 7 stages by copying and slightly modifying previous ones.
+        for (let i = 3; i < 10; i++) {
+            const baseDesign = stageDesigns[i % 3]; 
+            const newDesign = JSON.parse(JSON.stringify(baseDesign)); // Deep copy
+            newDesign.name = `${baseDesign.name} Sector ${Math.floor(i/3) + 1}`;
+            newDesign.skyGradientDay = baseDesign.skyGradientDay.map(color => lightenDarkenColor(color, (i%2 === 0 ? 20 : -20)));
+            newDesign.skyGradientNight = baseDesign.skyGradientNight.map(color => lightenDarkenColor(color, (i%2 === 0 ? 10 : -10)));
+            newDesign.mountainColorsDay = baseDesign.mountainColorsDay.map(color => lightenDarkenColor(color, (i%2 === 0 ? 15 : -15)));
+            newDesign.bossEnemyType = (i % 3 === 0) ? 'golem' : (i % 3 === 1) ? 'phantom' : 'dragon';
+            newDesign.enemyPool = [...new Set([...baseDesign.enemyPool, (i > 5 ? 'troll' : (i > 7 ? 'dragon' : 'orc'))])]; // Ensure unique, add progressively
+             if (i % 3 === 0) newDesign.defaultWeather = 'sunny';
+             else if (i % 3 === 1) newDesign.defaultWeather = 'rainy';
+             else newDesign.defaultWeather = 'windy';
+            stageDesigns.push(newDesign);
+        }
+
+
+        const TOWER_BASE_RADIUS = 18; 
+        const MIN_PATH_DISTANCE = 35; 
+        const MIN_TOWER_DISTANCE = TOWER_BASE_RADIUS * 2 + 4; 
+        const CANVAS_MARGIN = 20; 
 
         const path = [
             {x: -30, y: 150}, {x: 100, y: 150}, {x: 150, y: 200}, {x: 150, y: 400}, {x: 200, y: 460},
@@ -703,7 +826,7 @@
                     nature: ['#32CD32', '#90EE90', '#ADFF2F', '#20B2AA'],
                     fire: ['#FF4500', '#FF6347', '#FFD700', '#FFA500'],
                     water: ['#00BFFF', '#87CEEB', '#B0E0E6', '#4682B4'],
-                    smoke: ['#708090', '#A9A9A9', '#C0C0C0'],
+                    smoke: ['#708090', '#A9A9A9', '#C0C0C0', 'rgba(50,50,50,0.7)'],
                     star: ['#FFFF00', '#FFFAF0', '#FFD700'],
                     rain: ['rgba(135, 206, 250, 0.6)'], 
                     wind: ['rgba(220, 220, 220, 0.5)']  
@@ -753,13 +876,22 @@
         class Enemy {
              constructor(type, pathIndex = 0) {
                 this.type = type; const typeData = enemyTypes[type]; this.baseHealth = typeData.health; this.baseSpeed = typeData.speed;
-                this.health = this.baseHealth * (1 + (gameState.wave -1) * 0.15); this.maxHealth = this.health;
-                this.speed = this.baseSpeed * (1 + (gameState.wave -1) * 0.03); this.currentSpeed = this.speed;
-                this.reward = typeData.reward + Math.floor((gameState.wave-1) / 3); this.color = typeData.color;
+                this.health = this.baseHealth * (1 + (gameState.wave -1) * 0.15 + gameState.currentStage * 0.1); 
+                this.maxHealth = this.health;
+                this.speed = this.baseSpeed * (1 + (gameState.wave -1) * 0.03 + gameState.currentStage * 0.02); 
+                this.currentSpeed = this.speed;
+                this.reward = typeData.reward + Math.floor((gameState.wave-1) / 3) + gameState.currentStage * 2; 
+                this.color = typeData.color;
                 this.special = typeData.special; this.pathIndex = pathIndex; this.x = path[0].x; this.y = path[0].y;
                 this.effects = {}; this.baseArmor = (this.special === 'armor' || this.special === 'golem') ? 0.3 : 0;
                 this.currentArmor = this.baseArmor; this.stealthTime = 0; this.phaseTime = 0; this.regenCooldown = 0;
                 this.size = typeData.size || 12;
+                 if (this.special === 'boss') { // Extra boost for bosses
+                    this.health *= (1.5 + gameState.currentStage * 0.25);
+                    this.maxHealth = this.health;
+                    this.reward *= (2 + gameState.currentStage * 0.5);
+                    this.size *= (1.2 + gameState.currentStage * 0.05);
+                }
             }
             update(currentTime) {
                 this.currentSpeed = this.speed; this.currentArmor = this.baseArmor;
@@ -862,14 +994,13 @@
             get currentDamage() { 
                 let dmg = this.baseDamage; 
                 this.activeBoosts.forEach(b => { if(b.type === 'damage') dmg *= b.multiplier; }); 
-                // Turbo mode does not affect damage directly based on user request.
                 return dmg; 
             }
             get currentFireRate() { 
                 let fr = this.baseFireRate; 
                 this.activeBoosts.forEach(b => { if(b.type === 'fireRate') fr *= b.multiplier; }); 
                 if (gameState.turboModeActive) { fr /= 2; }
-                return Math.max(50, fr); // Ensure fire rate doesn't become too fast or zero
+                return Math.max(50, fr); 
             }
             get currentRange() { 
                 let rng = this.baseRange; 
@@ -933,7 +1064,7 @@
                 
                 let auraColor = null;
                 if (this.activeBoosts.some(b => b.type === 'damage')) auraColor = 'rgba(255, 100, 100, 0.8)';
-                if (gameState.turboModeActive) auraColor = 'rgba(255, 165, 0, 0.7)'; // Orange aura for turbo
+                if (gameState.turboModeActive) auraColor = 'rgba(255, 165, 0, 0.7)'; 
 
                 if (auraColor) {
                     ctx.fillStyle = auraColor;
@@ -959,25 +1090,13 @@
                 const currentUpgradeLevel = this.upgrades[upgradeType] || 0;
                 const cost = this.getUpgradeCost(upgradeType);
 
-                console.log(`[Tower.upgrade] ATTEMPT: Upgrading ${this.type}.${upgradeType}. Current Lvl: ${currentUpgradeLevel}, Max: ${upgradeDef ? upgradeDef.max : 'N/A'}. Cost: ${cost}, Gold: ${gameState.gold}`);
-
-                if (!upgradeDef) {
-                    console.error(`[Tower.upgrade] FAIL (Definition Missing): Upgrade definition for ${this.type}.${upgradeType} not found.`);
-                    return false;
-                }
-                if (currentUpgradeLevel >= upgradeDef.max) {
-                    console.warn(`[Tower.upgrade] FAIL (Max Level): ${this.type}.${upgradeType} already at max level (${currentUpgradeLevel}/${upgradeDef.max}).`);
-                    return false;
-                }
-                if (gameState.gold < cost) {
-                    console.warn(`[Tower.upgrade] FAIL (No Gold): Insufficient gold for ${this.type}.${upgradeType}. Cost: ${cost}, Have: ${gameState.gold}.`);
-                    return false;
-                }
+                if (!upgradeDef) return false;
+                if (currentUpgradeLevel >= upgradeDef.max) return false;
+                if (gameState.gold < cost) return false;
 
                 gameState.gold -= cost;
                 this.upgrades[upgradeType] = currentUpgradeLevel + 1;
                 this.applyUpgradeEffect(upgradeType, upgradeDef.effect, this.upgrades[upgradeType]);
-                console.log(`[Tower.upgrade] SUCCESS: ${this.type}.${upgradeType} upgraded to Lvl ${this.upgrades[upgradeType]}. Gold: ${gameState.gold}.`);
                 for (let i = 0; i < 15; i++) { gameState.particles.push(new Particle(this.x, this.y, 'nature', {speed:2, life: 25}));}
                 return true;
             }
@@ -1012,7 +1131,7 @@
                 this.x = x; this.y = y; this.target = target; this.tower = tower;   
                 this.speed = 8 + tower.level * 0.5; this.trail = []; this.damage = tower.currentDamage;
                 if (tower.type === 'wind' && gameState.weather === 'windy') this.speed *= 1.2;
-                 if (gameState.turboModeActive) this.speed *= 1.25; // Projectiles move a bit faster in turbo
+                 if (gameState.turboModeActive) this.speed *= 1.25; 
                 this.isCrit = (tower.type === 'wind' && tower.upgrades.crit && Math.random() < tower.upgrades.crit * towerTypes.wind.upgrades.crit.effect);
                 if (this.isCrit) this.damage *= 2; 
             }
@@ -1091,13 +1210,12 @@
                 if (!ctx) return;
                 ctx.save();
 
-                // --- Trail ---
                 this.trail.forEach((p, index) => {
-                    let trailBaseColor = [255, 215, 0]; // Default yellow
-                    if (this.tower.type === 'nature') trailBaseColor = [76, 175, 80, 180]; // Green, slightly transparent
-                    else if (this.tower.type === 'magic') trailBaseColor = [186, 104, 200, 150]; // Purple, transparent
-                    else if (this.tower.type === 'wind') trailBaseColor = [79, 195, 247, 120]; // Cyan, very transparent
-                    else if (this.tower.type === 'earth') trailBaseColor = [161, 136, 127, 200]; // Brown, less transparent
+                    let trailBaseColor = [255, 215, 0]; 
+                    if (this.tower.type === 'nature') trailBaseColor = [76, 175, 80, 180]; 
+                    else if (this.tower.type === 'magic') trailBaseColor = [186, 104, 200, 150]; 
+                    else if (this.tower.type === 'wind') trailBaseColor = [79, 195, 247, 120]; 
+                    else if (this.tower.type === 'earth') trailBaseColor = [161, 136, 127, 200]; 
 
                     ctx.fillStyle = `rgba(${trailBaseColor[0]}, ${trailBaseColor[1]}, ${trailBaseColor[2]}, ${p.alpha * (trailBaseColor[3] || 255) / 255 * 0.5 })`;
                     ctx.beginPath();
@@ -1105,90 +1223,43 @@
                     ctx.fill();
                 });
 
-                // --- Main Projectile ---
                 let mainColor = this.tower.color || '#FFD700';
                 let shadowColor = this.tower.color;
                 let size = this.isCrit ? 7 : 5;
 
                 if (this.tower.type === 'nature') {
-                    mainColor = this.isCrit ? '#A5D6A7' : '#4CAF50';
-                    shadowColor = '#2E7D32';
-                    size = this.isCrit ? 8 : 6;
-                    ctx.fillStyle = mainColor;
-                    ctx.shadowColor = shadowColor;
-                    ctx.shadowBlur = this.isCrit ? 15 : 10;
-                    ctx.beginPath();
-                    ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
-                    ctx.fill();
-                    // Leafy detail
+                    mainColor = this.isCrit ? '#A5D6A7' : '#4CAF50'; shadowColor = '#2E7D32'; size = this.isCrit ? 8 : 6;
+                    ctx.fillStyle = mainColor; ctx.shadowColor = shadowColor; ctx.shadowBlur = this.isCrit ? 15 : 10;
+                    ctx.beginPath(); ctx.arc(this.x, this.y, size, 0, Math.PI * 2); ctx.fill();
                     ctx.fillStyle = darkenColor(mainColor, 15);
-                    for(let i = 0; i < 3; i++) {
-                        ctx.beginPath();
-                        ctx.ellipse(this.x, this.y, size * 0.8, size * 0.3, Math.PI / 3 * i, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-
+                    for(let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(this.x, this.y, size * 0.8, size * 0.3, Math.PI / 3 * i, 0, Math.PI * 2); ctx.fill(); }
                 } else if (this.tower.type === 'magic') {
-                    mainColor = this.isCrit ? '#CE93D8' : '#9C27B0';
-                    shadowColor = '#7B1FA2';
-                    size = this.isCrit ? 7 : 5;
-                    ctx.fillStyle = mainColor;
-                    ctx.shadowColor = shadowColor;
-                    ctx.shadowBlur = this.isCrit ? 18 : 12;
-                    const s = size;
-                    ctx.beginPath();
-                    ctx.moveTo(this.x, this.y - s); // Top
-                    ctx.lineTo(this.x + s * 0.7, this.y - s * 0.1);
-                    ctx.lineTo(this.x + s * 0.3, this.y + s * 0.8);
-                    ctx.lineTo(this.x - s * 0.3, this.y + s * 0.8);
-                    ctx.lineTo(this.x - s * 0.7, this.y - s * 0.1);
-                    ctx.closePath();
-                    ctx.fill();
-
+                    mainColor = this.isCrit ? '#CE93D8' : '#9C27B0'; shadowColor = '#7B1FA2'; size = this.isCrit ? 7 : 5;
+                    ctx.fillStyle = mainColor; ctx.shadowColor = shadowColor; ctx.shadowBlur = this.isCrit ? 18 : 12;
+                    const s = size; ctx.beginPath(); ctx.moveTo(this.x, this.y - s); 
+                    ctx.lineTo(this.x + s * 0.7, this.y - s * 0.1); ctx.lineTo(this.x + s * 0.3, this.y + s * 0.8);
+                    ctx.lineTo(this.x - s * 0.3, this.y + s * 0.8); ctx.lineTo(this.x - s * 0.7, this.y - s * 0.1);
+                    ctx.closePath(); ctx.fill();
                 } else if (this.tower.type === 'wind') {
-                    mainColor = this.isCrit ? 'rgba(179, 229, 252, 0.9)' : 'rgba(79, 195, 247, 0.75)';
-                    shadowColor = 'rgba(3, 155, 229, 0.5)';
-                    size = this.isCrit ? 5 : 3; 
-                    const length = size * 3;
-                    const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-                    
-                    ctx.strokeStyle = mainColor;
-                    ctx.lineWidth = size;
-                    ctx.lineCap = 'round';
-                    ctx.shadowColor = shadowColor;
-                    ctx.shadowBlur = this.isCrit ? 12 : 8;
-                    ctx.beginPath();
-                    ctx.moveTo(this.x - Math.cos(angle) * length / 2, this.y - Math.sin(angle) * length / 2);
-                    ctx.lineTo(this.x + Math.cos(angle) * length / 2, this.y + Math.sin(angle) * length / 2);
-                    ctx.stroke();
-
+                    mainColor = this.isCrit ? 'rgba(179, 229, 252, 0.9)' : 'rgba(79, 195, 247, 0.75)'; shadowColor = 'rgba(3, 155, 229, 0.5)'; size = this.isCrit ? 5 : 3; 
+                    const length = size * 3; const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                    ctx.strokeStyle = mainColor; ctx.lineWidth = size; ctx.lineCap = 'round'; ctx.shadowColor = shadowColor; ctx.shadowBlur = this.isCrit ? 12 : 8;
+                    ctx.beginPath(); ctx.moveTo(this.x - Math.cos(angle) * length / 2, this.y - Math.sin(angle) * length / 2);
+                    ctx.lineTo(this.x + Math.cos(angle) * length / 2, this.y + Math.sin(angle) * length / 2); ctx.stroke();
                 } else if (this.tower.type === 'earth') {
-                    mainColor = this.isCrit ? '#BCAAA4' : '#795548';
-                    shadowColor = '#5D4037';
-                    size = this.isCrit ? 9 : 7;
-                    ctx.fillStyle = mainColor;
-                    ctx.shadowColor = shadowColor;
-                    ctx.shadowBlur = this.isCrit ? 10 : 7;
-                    ctx.beginPath(); // Jagged rock shape
-                    let points = 5; let variance = size * 0.3;
+                    mainColor = this.isCrit ? '#BCAAA4' : '#795548'; shadowColor = '#5D4037'; size = this.isCrit ? 9 : 7;
+                    ctx.fillStyle = mainColor; ctx.shadowColor = shadowColor; ctx.shadowBlur = this.isCrit ? 10 : 7;
+                    ctx.beginPath(); let points = 5; let variance = size * 0.3;
                     for (let i = 0; i < points; i++) {
-                        let angle = (i / points) * Math.PI * 2;
-                        let r = size + (Math.random() - 0.5) * variance;
-                        let px = this.x + Math.cos(angle) * r;
-                        let py = this.y + Math.sin(angle) * r;
+                        let angle = (i / points) * Math.PI * 2; let r = size + (Math.random() - 0.5) * variance;
+                        let px = this.x + Math.cos(angle) * r; let py = this.y + Math.sin(angle) * r;
                         if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
                     }
-                    ctx.closePath();
-                    ctx.fill();
+                    ctx.closePath(); ctx.fill();
                 } else { 
-                    mainColor = this.isCrit ? '#FF3030' : (this.tower.color || '#FFD700');
-                    shadowColor = this.isCrit ? '#FF4500' : (this.tower.color || '#FF8C00');
-                    ctx.fillStyle = mainColor;
-                    ctx.shadowColor = shadowColor;
-                    ctx.shadowBlur = this.isCrit ? 18 : 12;
-                    ctx.beginPath();
-                    ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
-                    ctx.fill();
+                    mainColor = this.isCrit ? '#FF3030' : (this.tower.color || '#FFD700'); shadowColor = this.isCrit ? '#FF4500' : (this.tower.color || '#FF8C00');
+                    ctx.fillStyle = mainColor; ctx.shadowColor = shadowColor; ctx.shadowBlur = this.isCrit ? 18 : 12;
+                    ctx.beginPath(); ctx.arc(this.x, this.y, size, 0, Math.PI * 2); ctx.fill();
                 }
                 ctx.restore();
             }
@@ -1216,104 +1287,111 @@
         }
         
         // --- Drawing Functions ---
-        function drawBackground() {
-            if (!ctx) { console.warn("drawBackground: ctx not available"); return; }
-            const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height); 
-            if (gameState.timeOfDay === 'day') { grad.addColorStop(0, '#87CEEB'); grad.addColorStop(0.7, '#B0E0E6'); grad.addColorStop(1, '#98FB98'); }
-            else { grad.addColorStop(0, '#000030'); grad.addColorStop(0.5, '#2c3e50'); grad.addColorStop(1, '#34495E'); }
-            ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            if (gameState.timeOfDay === 'night') drawStars();
-            drawClouds(); drawDistantMountains(); drawTrees();
+        function drawBackground(mainCtx, design, timeOfDay) {
+            if (!mainCtx || !design) { console.warn("drawBackground: mainCtx or design not available"); return; }
+            const gradColors = timeOfDay === 'day' ? design.skyGradientDay : design.skyGradientNight;
+            const grad = mainCtx.createLinearGradient(0, 0, canvas.width, canvas.height); 
+            grad.addColorStop(0, gradColors[0]); 
+            grad.addColorStop(0.7, gradColors[1]); 
+            grad.addColorStop(1, gradColors[2]); 
+            mainCtx.fillStyle = grad; mainCtx.fillRect(0, 0, canvas.width, canvas.height);
+            if (timeOfDay === 'night') drawStars(mainCtx, design, timeOfDay);
+            drawClouds(mainCtx, design, timeOfDay); 
+            drawDistantMountains(mainCtx, design, timeOfDay); 
+            drawTrees(mainCtx, design, timeOfDay);
+            if (design.drawExtras && particleCtx) design.drawExtras(particleCtx, timeOfDay, design); // Pass particleCtx for effects
         }
-        function drawStars() { 
-             if (!ctx) return;
-            ctx.save();
+
+        function drawStars(mainCtx, design, timeOfDay) { 
+             if (!mainCtx) return;
+            mainCtx.save();
             for (let i = 0; i < 100; i++) {
-                ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.5 + 0.3})`;
-                ctx.beginPath();
-                ctx.arc(Math.random() * canvas.width, Math.random() * canvas.height * 0.6, Math.random() * 1.5 + 0.5, 0, Math.PI * 2);
-                ctx.fill();
+                mainCtx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.5 + 0.3})`;
+                mainCtx.beginPath();
+                mainCtx.arc(Math.random() * canvas.width, Math.random() * canvas.height * 0.6, Math.random() * 1.5 + 0.5, 0, Math.PI * 2);
+                mainCtx.fill();
             }
-            ctx.restore();
+            mainCtx.restore();
         }
-        function drawDistantMountains() {
-            if (!ctx) return;
-            ctx.save();
-            const mountainColors = gameState.timeOfDay === 'day' ? ['#A0A0C0', '#8080A0', '#606080'] : ['#303050', '#202040', '#101030'];
+
+        function drawDistantMountains(mainCtx, design, timeOfDay) {
+            if (!mainCtx || !design) return;
+            mainCtx.save();
+            const mountainColors = timeOfDay === 'day' ? design.mountainColorsDay : design.mountainColorsNight;
             for (let i = 0; i < 3; i++) {
-                ctx.fillStyle = mountainColors[i];
-                ctx.beginPath();
-                ctx.moveTo(-50, canvas.height - 100 - i * 40 + Math.sin(0) * 20);
+                mainCtx.fillStyle = mountainColors[i % mountainColors.length];
+                mainCtx.beginPath();
+                mainCtx.moveTo(-50, canvas.height - 100 - i * 40 + Math.sin(0) * 20);
                 for (let x = 0; x < canvas.width + 100; x += 50) {
-                    ctx.lineTo(x, canvas.height - 150 - i * 50 + Math.sin(x * 0.01 + i) * (40 - i * 10));
+                    mainCtx.lineTo(x, canvas.height - 150 - i * 50 + Math.sin(x * 0.01 + i + gameState.currentStage) * (40 - i * 10)); // Added stage influence for variety
                 }
-                ctx.lineTo(canvas.width + 50, canvas.height);
-                ctx.lineTo(-50, canvas.height);
-                ctx.closePath();
-                ctx.fill();
+                mainCtx.lineTo(canvas.width + 50, canvas.height);
+                mainCtx.lineTo(-50, canvas.height);
+                mainCtx.closePath();
+                mainCtx.fill();
             }
-            ctx.restore();
+            mainCtx.restore();
         }
-        function drawClouds() {
-            if (!ctx) return;
-            ctx.save();
-            const cloudColor = gameState.timeOfDay === 'day' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(100, 100, 120, 0.6)';
-            ctx.fillStyle = cloudColor;
-            const time = Date.now() * 0.00005 * (gameState.turboModeActive ? 2 : 1); // Clouds move faster in turbo
+
+        function drawClouds(mainCtx, design, timeOfDay) {
+            if (!mainCtx || !design) return;
+            mainCtx.save();
+            mainCtx.fillStyle = timeOfDay === 'day' ? design.cloudColorDay : design.cloudColorNight;
+            const time = Date.now() * 0.00005 * (gameState.turboModeActive ? 2 : 1); 
             for (let i = 0; i < 5 + (gameState.weather === 'rainy' ? 3 : 0) ; i++) {
-                const baseX = (i * 200 + time * 2000) % (canvas.width + 200) - 100;
-                const baseY = 50 + i * 10 + Math.sin(time * 2 + i) * 20;
-                const cloudSize = 30 + Math.sin(i) * 10;
-                ctx.beginPath();
-                ctx.arc(baseX, baseY, cloudSize, 0, Math.PI * 2);
-                ctx.arc(baseX + cloudSize * 0.8, baseY, cloudSize * 1.2, 0, Math.PI * 2);
-                ctx.arc(baseX + cloudSize * 1.8, baseY, cloudSize, 0, Math.PI * 2);
-                ctx.fill();
+                const baseX = (i * 200 + time * (2000 + gameState.currentStage * 100) ) % (canvas.width + 200) - 100; // Stage influences speed slightly
+                const baseY = 50 + i * 10 + Math.sin(time * (2 + gameState.currentStage * 0.1) + i) * 20;
+                const cloudSize = 30 + Math.sin(i + gameState.currentStage) * 10; // Stage influences size/shape slightly
+                mainCtx.beginPath();
+                mainCtx.arc(baseX, baseY, cloudSize, 0, Math.PI * 2);
+                mainCtx.arc(baseX + cloudSize * 0.8, baseY, cloudSize * 1.2, 0, Math.PI * 2);
+                mainCtx.arc(baseX + cloudSize * 1.8, baseY, cloudSize, 0, Math.PI * 2);
+                mainCtx.fill();
             }
-            ctx.restore();
+            mainCtx.restore();
         }
-        function drawTrees() { 
-            if (!ctx) return;
-            ctx.save();
-            const trunkColor = gameState.timeOfDay === 'day' ? '#8B4513' : '#5D3A1A';
-            const leafColors = gameState.timeOfDay === 'day' 
-                ? ['#228B22', '#2E8B57', '#3CB371'] 
-                : ['#1A4D2E', '#145A32', '#0B5345'];
+
+        function drawTrees(mainCtx, design, timeOfDay) { 
+            if (!mainCtx || !design) return;
+            mainCtx.save();
+            const trunkColor = timeOfDay === 'day' ? design.treeTrunkDay : design.treeTrunkNight;
+            const leafColors = timeOfDay === 'day' ? design.treeLeafDay : design.treeLeafNight;
             
             for (let i = 0; i < 15; i++) {
-                const x = i * (canvas.width / 14) - 20 + (Math.random()-0.5)*10;
-                const treeHeight = 80 + Math.random() * 40;
+                const x = i * (canvas.width / 14) - 20 + (Math.random()-0.5)*10 + Math.sin(i + gameState.currentStage)*5; // Stage influences position
+                const treeHeight = 80 + Math.random() * 40 + Math.cos(i + gameState.currentStage)*10; // Stage influences height
                 const trunkWidth = 10 + Math.random() * 5;
-                const crownRadius = 25 + Math.random() * 10;
+                const crownRadius = 25 + Math.random() * 10 + Math.sin(i*2 + gameState.currentStage)*5; // Stage influences crown
                 const yBase = canvas.height - 80 + (Math.random()-0.5)*10;
 
-                ctx.fillStyle = trunkColor;
-                ctx.fillRect(x - trunkWidth / 2, yBase - treeHeight * 0.4, trunkWidth, treeHeight * 0.4);
+                mainCtx.fillStyle = trunkColor;
+                mainCtx.fillRect(x - trunkWidth / 2, yBase - treeHeight * 0.4, trunkWidth, treeHeight * 0.4);
                 
-                ctx.fillStyle = leafColors[i % leafColors.length];
-                ctx.beginPath();
-                ctx.ellipse(x, yBase - treeHeight * 0.4 - crownRadius * 0.8, crownRadius, crownRadius * 1.2, Math.random()*0.2-0.1, 0, Math.PI * 2);
-                ctx.fill();
-                 if (gameState.timeOfDay === 'day') {
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-                    ctx.beginPath();
-                    ctx.ellipse(x - crownRadius *0.3, yBase - treeHeight * 0.4 - crownRadius, crownRadius*0.5, crownRadius * 0.7, Math.random()*0.2-0.1, 0, Math.PI * 2);
-                    ctx.fill();
+                mainCtx.fillStyle = leafColors[ (i + gameState.currentStage) % leafColors.length]; // Cycle colors with stage
+                mainCtx.beginPath();
+                mainCtx.ellipse(x, yBase - treeHeight * 0.4 - crownRadius * 0.8, crownRadius, crownRadius * 1.2, (Math.random()*0.2-0.1) + Math.sin(gameState.currentStage)*0.1, 0, Math.PI * 2);
+                mainCtx.fill();
+                 if (timeOfDay === 'day') {
+                    mainCtx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+                    mainCtx.beginPath();
+                    mainCtx.ellipse(x - crownRadius *0.3, yBase - treeHeight * 0.4 - crownRadius, crownRadius*0.5, crownRadius * 0.7, (Math.random()*0.2-0.1) + Math.cos(gameState.currentStage)*0.1, 0, Math.PI * 2);
+                    mainCtx.fill();
                 }
             }
-            ctx.restore();
+            mainCtx.restore();
         }
-        function drawPath() {
-            if (!ctx) { console.warn("drawPath: ctx not available"); return; }
-            ctx.strokeStyle = '#D2691E'; ctx.lineWidth = 35; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-            ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
-            for (let i = 1; i < path.length; i++) { ctx.lineTo(path[i].x, path[i].y); }
-            ctx.stroke();
-            ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 40; ctx.globalCompositeOperation = 'destination-over';
-            ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
-            for (let i = 1; i < path.length; i++) { ctx.lineTo(path[i].x, path[i].y); }
-            ctx.stroke(); ctx.globalCompositeOperation = 'source-over';
-            ctx.fillStyle = '#CD853F';
+
+        function drawPath(mainCtx, design) {
+            if (!mainCtx || !design) { console.warn("drawPath: mainCtx or design not available"); return; }
+            mainCtx.strokeStyle = design.pathFillColor; mainCtx.lineWidth = 35; mainCtx.lineCap = 'round'; mainCtx.lineJoin = 'round';
+            mainCtx.beginPath(); mainCtx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) { mainCtx.lineTo(path[i].x, path[i].y); }
+            mainCtx.stroke();
+            mainCtx.strokeStyle = design.pathBorderColor; mainCtx.lineWidth = 40; mainCtx.globalCompositeOperation = 'destination-over';
+            mainCtx.beginPath(); mainCtx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) { mainCtx.lineTo(path[i].x, path[i].y); }
+            mainCtx.stroke(); mainCtx.globalCompositeOperation = 'source-over';
+            mainCtx.fillStyle = design.pathStoneColor;
             for (let i = 0; i < path.length - 1; i++) {
                 const segments = 5;
                 for (let j = 0; j < segments; j++) {
@@ -1321,59 +1399,98 @@
                     const x = path[i].x + (path[i+1].x - path[i].x) * t; const y = path[i].y + (path[i+1].y - path[i].y) * t;
                     for (let k = 0; k < 3; k++) {
                         const stoneX = x + (Math.random() - 0.5) * 20; const stoneY = y + (Math.random() - 0.5) * 20;
-                        ctx.beginPath(); ctx.arc(stoneX, stoneY, Math.random()*2+1, 0, Math.PI * 2); ctx.fill();
+                        mainCtx.beginPath(); mainCtx.arc(stoneX, stoneY, Math.random()*2+1, 0, Math.PI * 2); mainCtx.fill();
                     }
                 }
             }
         }
         
         // --- Gameplay Logic ---
-        function getEnemiesForWave(waveNum) {
-             const baseCount = 5 + Math.floor(waveNum / 2);
-            let numEnemies = baseCount + waveNum * 1.5; 
-            if (waveNum % 5 === 0 && waveNum >= 5) numEnemies = Math.max(1, Math.floor(numEnemies /3)); 
-            numEnemies = Math.floor(numEnemies);
+        function getEnemiesForWave(globalWaveNum) {
+            const currentStageIndex = Math.max(0, Math.min(gameState.totalStages - 1, Math.floor((globalWaveNum - 1) / WAVES_PER_STAGE)));
+            const waveInStage = (globalWaveNum - 1) % WAVES_PER_STAGE + 1;
+            const stageDesign = stageDesigns[currentStageIndex];
 
             let comp = [];
-            const types = ['imp'];
-            if (waveNum >= 2) types.push('goblin'); if (waveNum >= 3) types.push('orc');
-            if (waveNum >= 4) types.push('troll'); if (waveNum >= 6) types.push('shadow');
-            if (waveNum >= 7 && waveNum % 5 !== 0) types.push('phantom'); 
-            if (waveNum >= 8 && waveNum % 5 !== 0) types.push('golem');
+
+            if (waveInStage === WAVES_PER_STAGE) { // Boss Wave
+                const bossType = stageDesign.bossEnemyType || 'dragon';
+                if (enemyTypes[bossType]) {
+                    comp.push(bossType);
+                } else { // Fallback if boss type is invalid
+                    comp.push('dragon'); 
+                    console.warn(`Invalid boss type '${bossType}' for stage ${currentStageIndex + 1}. Defaulting to 'dragon'.`);
+                }
+                gameState.expectedEnemiesThisWave = comp.length;
+                return comp;
+            }
+
+            // Regular wave logic
+            const baseCount = 2 + Math.floor(globalWaveNum / 4) + currentStageIndex;
+            let numEnemies = baseCount + Math.floor(globalWaveNum * 0.3) + currentStageIndex * 1;
+            numEnemies = Math.max(1, Math.floor(numEnemies));
+
+            let availableTypes = ['imp'];
+            if (globalWaveNum >= 2 || currentStageIndex >= 0) availableTypes.push('goblin');
+            if (globalWaveNum >= 4 || currentStageIndex >= 1) availableTypes.push('orc');
+            if (globalWaveNum >= 7 || currentStageIndex >= 1) availableTypes.push('shadow');
+            if (globalWaveNum >= 10 || currentStageIndex >= 2) availableTypes.push('troll');
+            if (globalWaveNum >= 12 || currentStageIndex >= 3) availableTypes.push('phantom');
+            if (globalWaveNum >= 15 || currentStageIndex >= 4) availableTypes.push('golem');
             
+            if (stageDesign.enemyPool && stageDesign.enemyPool.length > 0) {
+                availableTypes = [...new Set([...availableTypes, ...stageDesign.enemyPool])];
+            }
+            availableTypes = availableTypes.filter(type => enemyTypes[type]); // Ensure all types are valid
+
+            if(availableTypes.length === 0) availableTypes.push('imp'); // Fallback
+
             for (let i = 0; i < numEnemies; i++) {
-                let typeKey = types[Math.floor(Math.random() * types.length)];
-                if (i > numEnemies * 0.7 && waveNum > 5 && Math.random() > 0.5) {
-                    const strongerTypes = types.filter(t => t === 'orc' || t === 'troll' || t === 'golem' || t === 'phantom');
+                let typeKey = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+                if (i > numEnemies * 0.6 && (globalWaveNum > 8 || currentStageIndex > 1)) {
+                    const strongerTypes = availableTypes.filter(t => ['orc', 'troll', 'golem', 'phantom'].includes(t) && enemyTypes[t]);
                     if (strongerTypes.length > 0) typeKey = strongerTypes[Math.floor(Math.random() * strongerTypes.length)];
                 }
-                 comp.push(typeKey);
+                comp.push(typeKey);
             }
-            if (waveNum % 5 === 0 && waveNum >= 5) {
-                if (waveNum % 10 === 0 && waveNum >= 10 && enemyTypes.dragon) { comp.push('dragon'); }
-                else if (enemyTypes.golem) {comp.push('golem');}
-                
-                if(waveNum > 10 && waveNum % 10 !== 0 && enemyTypes.dragon && Math.random() < 0.3) comp.push('dragon'); 
-            }
+            gameState.expectedEnemiesThisWave = comp.length;
             return comp;
         }
+
         function spawnEnemyWave() { 
             const enemyTypesForWave = getEnemiesForWave(gameState.wave);
-            gameState.expectedEnemiesThisWave = enemyTypesForWave.length; 
+            if (!enemyTypesForWave || enemyTypesForWave.length === 0) {
+                console.warn("No enemies generated for wave:", gameState.wave, "Stage:", gameState.currentStage + 1);
+                gameState.expectedEnemiesThisWave = 0;
+                // Potentially auto-advance if this happens, or log an error
+                return;
+            }
             gameState.enemiesKilledThisWave = 0; 
             gameState.enemiesSpawnedThisWave = 0;
             
             let spawnIndex = 0;
             const baseInt = 1000; const minInt = 150;
-            const intReduction = gameState.wave * 20;
-            const spawnIntTime = Math.max(minInt, baseInt - intReduction);
+            const intReduction = gameState.wave * 15 + gameState.currentStage * 20; // Stage makes spawn faster
+            let spawnIntTime = Math.max(minInt, baseInt - intReduction);
+            
+            // For boss waves, spawn almost immediately
+            const waveInStage = (gameState.wave - 1) % WAVES_PER_STAGE + 1;
+            if (waveInStage === WAVES_PER_STAGE && enemyTypesForWave.length === 1) { // Is Boss Wave
+                spawnIntTime = 200; // Spawn boss quickly
+            }
+
 
             const spawnInterval = setInterval(() => {
                 if (!gameState.gameRunning || spawnIndex >= enemyTypesForWave.length) {
                     clearInterval(spawnInterval); return;
                 }
-                gameState.enemies.push(new Enemy(enemyTypesForWave[spawnIndex]));
-                gameState.enemiesSpawnedThisWave++; 
+                const enemyTypeKey = enemyTypesForWave[spawnIndex];
+                if (enemyTypes[enemyTypeKey]) {
+                    gameState.enemies.push(new Enemy(enemyTypeKey));
+                    gameState.enemiesSpawnedThisWave++; 
+                } else {
+                    console.warn(`Invalid enemy type '${enemyTypeKey}' in wave composition. Skipping.`);
+                }
                 spawnIndex++;
                 updateUI();
             }, spawnIntTime);
@@ -1388,7 +1505,7 @@
                 while(!isValid && attempts < 50) { 
                     spawnX = Math.random() * (canvas.width - 100) + 50; 
                     spawnY = Math.random() * (canvas.height - 100) + 50;
-                    isValid = isValidTowerPosition(spawnX, spawnY, true); // Pass true to ignore tower collision for power-ups
+                    isValid = isValidTowerPosition(spawnX, spawnY, true); 
                     if (isValid) { 
                         for (const p of gameState.powerUpsOnMap) {
                             if (Math.sqrt((spawnX - p.x)**2 + (spawnY - p.y)**2) < 100) {
@@ -1405,38 +1522,31 @@
             if (gameState.waveActive || !gameState.gameRunning || gameState.enemies.length > 0) return;
 
             if (waveStartSfxElement) {
-                console.log("startWave: Wave start SFX element found. Attempting to play.");
                 waveStartSfxElement.currentTime = 0;
                 const sfxPlayPromise = waveStartSfxElement.play();
-                if (sfxPlayPromise !== undefined) {
-                    sfxPlayPromise.then(_ => {}).catch(error => {
-                        console.warn("startWave: Wave start SFX - play() promise rejected. Error:", error);
-                    });
-                }
-            } else {
-                 console.warn("startWave: waveStartSfxElement was null when trying to play.");
+                if (sfxPlayPromise !== undefined) { sfxPlayPromise.catch(error => { console.warn("startWave: Wave start SFX - play() promise rejected. Error:", error); }); }
             }
 
             gameState.waveActive = true;
-            gameState.enemiesSpawnedThisWave = 0; 
-            gameState.enemiesKilledThisWave = 0;
             gameState.combo = 0; 
             const waveBtn = document.getElementById('waveBtn');
             if(waveBtn) { waveBtn.disabled = true; waveBtn.textContent = '🌊 Wave in Progress...';}
-            spawnEnemyWave();
-            if (gameState.wave > 1 && gameState.wave % 2 === 0) changeWeather(); 
             
+            const currentDesign = stageDesigns[gameState.currentStage];
+            if (gameState.wave > 1 && gameState.wave % 2 === 0 && (!currentDesign || currentDesign.defaultWeather === 'sunny')) { // Only change weather if not fixed by stage or on first wave of stage
+                 changeWeather(); 
+            } else if (currentDesign && currentDesign.defaultWeather && gameState.weather !== currentDesign.defaultWeather) {
+                 gameState.weather = currentDesign.defaultWeather;
+                 showAchievement(`Weather set by stage: ${gameState.weather.charAt(0).toUpperCase() + gameState.weather.slice(1)}!`);
+                 gameState.currentWeatherEffectApplied = false;
+            }
+            spawnEnemyWave(); // Spawn enemies AFTER weather might have changed
+
             if (audioElement) {
                 if (audioElement.paused && !audioElement.muted && gameState.wave === 1) { 
                     const bgPlayPromise = audioElement.play();
-                    if (bgPlayPromise !== undefined) {
-                        bgPlayPromise.then(_ => {}).catch(error => {
-                            console.warn("startWave: Background music - play() promise rejected. Error:", error);
-                        });
-                    }
+                    if (bgPlayPromise !== undefined) { bgPlayPromise.catch(error => { console.warn("startWave: Background music - play() promise rejected. Error:", error);}); }
                 }
-            } else {
-                console.warn("startWave: audioElement (backgroundMusic) was null when trying to play.");
             }
             updateUI();
         }
@@ -1448,10 +1558,10 @@
             }
             gameState.weather = newWeather;
             showAchievement(`Weather changed to: ${gameState.weather.charAt(0).toUpperCase() + gameState.weather.slice(1)}!`);
-            gameState.currentWeatherEffectApplied = false; // Trigger re-application
+            gameState.currentWeatherEffectApplied = false; 
             updateUI();
         }
-        function applyWeatherEffects() {
+        function applyWeatherEffects() { // This function seems redundant now, weather effects are mostly visual or direct enemy speed modifiers
             if (gameState.currentWeatherEffectApplied) return;
             gameState.currentWeatherEffectApplied = true;
         }
@@ -1472,7 +1582,6 @@
                 if(canvas) canvas.style.cursor = 'crosshair'; 
                 closeUpgradePanel(); 
             } else { 
-                console.warn("Cannot select tower:", type, "Cost:", towerTypes[type] ? towerTypes[type].cost : "N/A", "Gold:", gameState.gold); 
                 showAchievement("Not enough Spirit Gems!");
             } 
             updateUI();
@@ -1506,7 +1615,6 @@
                 const clickRadius = TOWER_BASE_RADIUS + tower.level * 0.5 + 5;
                 if (Math.sqrt((x - tower.x)**2 + (y - tower.y)**2) < clickRadius) {
                     gameState.selectedTower = tower;
-                    console.log(`[selectTowerForUpgrade] Selected tower: ${tower.type} at ${tower.x},${tower.y}. Calling showUpgradePanel.`);
                     gameState.selectedTowerType = null; 
                     if(canvas) canvas.style.cursor = 'pointer'; 
                     showUpgradePanel(tower); 
@@ -1516,13 +1624,9 @@
             gameState.selectedTower = null; if(canvas) canvas.style.cursor = 'default'; closeUpgradePanel(); return false;
         }
         function showUpgradePanel(tower) {
-            console.log(`[showUpgradePanel] Called for tower: ${tower ? tower.type : 'NULL TOWER'}. Current gold: ${gameState.gold}`);
             const panel = document.getElementById('upgradePanel'); const nameEl = document.getElementById('upgradeTowerName');
             const optionsEl = document.getElementById('upgradeOptions');
-            if (!panel || !nameEl || !optionsEl || !tower) { 
-                console.error("[showUpgradePanel] Upgrade panel elements missing or tower not provided. Tower:", tower); 
-                return; 
-            }
+            if (!panel || !nameEl || !optionsEl || !tower) { return; }
             nameEl.innerHTML = `🌿 ${tower.type.charAt(0).toUpperCase() + tower.type.slice(1)} <span style="font-size:0.8em;">(Lvl ${tower.level})</span>`;
             let html = `<div style="margin-bottom: 8px; font-size: 0.9em;">Kills: ${tower.kills} | Dmg: ${tower.totalDamage.toFixed(0)}</div>`;
             const towerUpgradeDefs = towerTypes[tower.type].upgrades;
@@ -1560,34 +1664,21 @@
         }
         
         function upgradeTower(upgradeType) {
-            console.log(`[Global upgradeTower] Called for type: '${upgradeType}' on selected tower: ${gameState.selectedTower ? gameState.selectedTower.type : 'NONE'}`);
             if (gameState.selectedTower) {
                 const success = gameState.selectedTower.upgrade(upgradeType);
-                if (success) {
-                    showAchievement(`${gameState.selectedTower.type} ${upgradeType} upgraded!`);
-                } else {
+                if (success) { showAchievement(`${gameState.selectedTower.type} ${upgradeType} upgraded!`); } 
+                else {
                     const towerSpecificUpgradeDef = towerTypes[gameState.selectedTower.type].upgrades[upgradeType];
                     if (towerSpecificUpgradeDef) {
                         const currentTowerUpgradeLevel = gameState.selectedTower.upgrades[upgradeType] || 0;
                         const costForThisUpgrade = gameState.selectedTower.getUpgradeCost(upgradeType);
-                        if (currentTowerUpgradeLevel >= towerSpecificUpgradeDef.max) {
-                            showAchievement("Upgrade max level reached!");
-                        } else if (gameState.gold < costForThisUpgrade) {
-                            showAchievement("Not enough Spirit Gems for upgrade!");
-                        } else {
-                            showAchievement("Upgrade failed. See console for details.");
-                        }
-                    } else {
-                         showAchievement(`Upgrade '${upgradeType}' definition not found for this tower type.`);
-                    }
+                        if (currentTowerUpgradeLevel >= towerSpecificUpgradeDef.max) showAchievement("Upgrade max level reached!");
+                        else if (gameState.gold < costForThisUpgrade) showAchievement("Not enough Spirit Gems for upgrade!");
+                        else showAchievement("Upgrade failed. See console.");
+                    } else showAchievement(`Upgrade '${upgradeType}' N/A.`);
                 }
-                showUpgradePanel(gameState.selectedTower); 
-                updateUI(); 
-            } else {
-                console.error("[Global upgradeTower] Error: gameState.selectedTower is null. Cannot upgrade.");
-                showAchievement("No tower selected for upgrade!");
-                updateUI(); 
-            }
+                showUpgradePanel(gameState.selectedTower); updateUI(); 
+            } else { showAchievement("No tower selected for upgrade!"); updateUI(); }
         }
 
         function sellTower() {
@@ -1619,7 +1710,8 @@
         function checkAchievements() {
             const achievementsList = [
                 { id: 'first_kill', condition: () => gameState.totalEnemiesKilled >= 1, text: '🎯 First Blood!' },
-                { id: 'wave_5', condition: () => gameState.wave >= 6, text: '🌊 Wave 5 Cleared!' },
+                { id: 'stage_2_reached', condition: () => gameState.currentStage >= 1, text: '🗺️ Reached Mystic Grove!' },
+                { id: 'stage_3_reached', condition: () => gameState.currentStage >= 2, text: '🌋 Reached Volcanic Wastes!' },
                 { id: 'combo_10', condition: () => gameState.maxCombo >= 10, text: '🔥 Combo x10 Master!' },
                 { id: 'gold_500', condition: () => gameState.gold >= 500, text: '💰 Gold Hoarder (500G)!' },
                 { id: 'towers_5', condition: () => gameState.towers.length >= 5, text: '🏰 Tower Builder (5)!' },
@@ -1639,34 +1731,22 @@
             }
         }
         function toggleMusic() {
-            if (!audioElement) {
-                console.warn("toggleMusic: audioElement (backgroundMusic) is null.");
-                return;
-            }
+            if (!audioElement) return;
             const muteBtn = document.getElementById('muteBtn');
             if (audioElement.muted) {
-                audioElement.muted = false;
-                if(muteBtn) muteBtn.textContent = '🔊';
-                 if (audioElement.paused) {
-                    const playPromise = audioElement.play();
-                    if (playPromise !== undefined) {
-                        playPromise.then(_ => {}).catch(e => {
-                            console.warn("toggleMusic: Play after unmute - play() promise rejected. Error:", e);
-                        });
-                    }
-                }
+                audioElement.muted = false; if(muteBtn) muteBtn.textContent = '🔊';
+                 if (audioElement.paused) { audioElement.play().catch(e => console.warn("Play after unmute failed:", e)); }
             } else {
-                audioElement.muted = true;
-                if(muteBtn) muteBtn.textContent = '🔇';
+                audioElement.muted = true; if(muteBtn) muteBtn.textContent = '🔇';
             }
         }
         function activateTurboMode() {
             if (gameState.comboPoints >= MAX_COMBO_POINTS && !gameState.turboModeActive) {
                 gameState.turboModeActive = true;
-                gameState.turboModeEndTime = Date.now() + TURBO_MODE_DURATION;
-                gameState.comboPoints = 0; // Reset meter after activation
+                gameState.turboModeEndTime = performance.now() + TURBO_MODE_DURATION; // Use performance.now()
+                gameState.comboPoints = 0; 
                 showAchievement("⚡ TURBO MODE ACTIVATED! ⚡");
-                checkAchievements(); // To show turbo charged achievement immediately
+                checkAchievements(); 
                 if(gameContainer) gameContainer.classList.add('turbo-active-screen');
                 updateUI();
             }
@@ -1677,7 +1757,7 @@
         function gameLoop(timestamp) {
             if (!ctx || !particleCtx) { if (!gameLoopErrorLogged) { console.error("GameLoop: Canvas context not available. Halting game loop."); gameLoopErrorLogged = true; } return; }
             const deltaTime = timestamp - lastUpdateTime; lastUpdateTime = timestamp;
-            if (gameState.health <=0 && gameState.gameRunning) { gameOver(); }
+            if (gameState.health <=0 && gameState.gameRunning) { gameOver("defeated"); }
             if (gameState.gameRunning) { updateGame(timestamp, deltaTime); drawGame(); }
             requestAnimationFrame(gameLoop);
         }
@@ -1688,10 +1768,19 @@
                 gameState.turboModeActive = false;
                 showAchievement("Turbo Mode Faded...");
                 if(gameContainer) gameContainer.classList.remove('turbo-active-screen');
-                // Remove 'turbo_charged' achievement so it can be shown again next time
                 gameState.achievements.delete('turbo_charged'); 
                 updateUI();
             }
+
+            // Ensure current stage is correctly set based on wave (e.g. after loading a game)
+            const expectedStage = Math.min(gameState.totalStages - 1, Math.max(0, Math.floor((gameState.wave - 1) / WAVES_PER_STAGE)));
+            if (gameState.currentStage !== expectedStage) {
+                gameState.currentStage = expectedStage;
+                gameState.weather = stageDesigns[gameState.currentStage].defaultWeather || 'sunny';
+                gameState.currentWeatherEffectApplied = false;
+                 showAchievement(`Stage ${gameState.currentStage + 1}: ${stageDesigns[gameState.currentStage].name}`);
+            }
+
 
             if (!gameState.currentWeatherEffectApplied) applyWeatherEffects();
             gameState.powerUpsOnMap.forEach(p => p.update()); 
@@ -1708,26 +1797,68 @@
             }
             gameState.towers.forEach(t => t.update(currentTime));
             for (let i = gameState.projectiles.length - 1; i >= 0; i--) { if (!gameState.projectiles[i].update()) gameState.projectiles.splice(i, 1); }
+            
             if (gameState.waveActive && gameState.enemies.length === 0 && gameState.enemiesSpawnedThisWave >= gameState.expectedEnemiesThisWave && gameState.expectedEnemiesThisWave > 0 ) {
-                gameState.waveActive = false; gameState.wave++;
-                const waveBonus = 75 + gameState.wave * 20; gameState.gold += waveBonus; gameState.experience += waveBonus / 3; 
-                showAchievement(`🎉 Wave ${gameState.wave - 1} Cleared! +${waveBonus}G`);
-                const waveBtn = document.getElementById('waveBtn'); if(waveBtn){ waveBtn.disabled = false; waveBtn.textContent = '🌊 Summon Next Wave';}
+                gameState.waveActive = false; 
+                const waveBonus = 75 + gameState.wave * 10 + gameState.currentStage * 25; 
+                gameState.gold += waveBonus; gameState.experience += waveBonus / 3; 
+                showAchievement(`🎉 Wave ${gameState.wave} Cleared! +${waveBonus}G`);
+                
+                gameState.wave++; 
+
+                const newStageIndex = Math.min(gameState.totalStages - 1, Math.max(0, Math.floor((gameState.wave - 1) / WAVES_PER_STAGE)));
+
+                if (gameState.wave > gameState.totalStages * WAVES_PER_STAGE) {
+                    gameWon();
+                    return;
+                }
+
+                if (newStageIndex !== gameState.currentStage) {
+                    gameState.currentStage = newStageIndex;
+                    const currentDesign = stageDesigns[gameState.currentStage];
+                    showAchievement(`Entering Stage ${gameState.currentStage + 1}: ${currentDesign.name}!`);
+                    gameState.weather = currentDesign.defaultWeather || 'sunny';
+                    gameState.currentWeatherEffectApplied = false;
+                    checkAchievements(); // Check for stage-based achievements
+                }
+                
                 const expNeeded = gameState.level * 150 + (gameState.level-1)*75; 
                 if (gameState.experience >= expNeeded) {
                     gameState.level++; gameState.experience -= expNeeded; gameState.gold += 75 + gameState.level * 15; 
                     showAchievement(`🌟 Guardian Level ${gameState.level}!`);
                 }
                  gameState.expectedEnemiesThisWave = 0; 
+                 const waveBtn = document.getElementById('waveBtn'); if(waveBtn){ waveBtn.disabled = false; waveBtn.textContent = '🌊 Summon Next Wave';}
             }
             updateUI();
         }
+
+        function gameWon() {
+            gameState.gameRunning = false;
+            if (audioElement && !audioElement.paused) audioElement.pause();
+            if (gameState.turboModeActive) {
+                gameState.turboModeActive = false;
+                if(gameContainer) gameContainer.classList.remove('turbo-active-screen');
+            }
+            gameOver("won");
+        }
+
         function drawGame() {
             if (!ctx || !particleCtx) { console.warn("drawGame: Contexts not available."); return; }
-            ctx.clearRect(0, 0, canvas.width, canvas.height); particleCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
-            drawBackground(); drawPath(); drawWeatherEffects(particleCtx); 
-            gameState.towers.forEach(t => t.draw()); gameState.enemies.forEach(e => e.draw());
-            gameState.projectiles.forEach(p => p.draw()); gameState.particles.forEach(p => { if (typeof p.draw === 'function') p.draw(particleCtx); });
+            const currentStageDesign = stageDesigns[gameState.currentStage];
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height); 
+            particleCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+            
+            drawBackground(ctx, currentStageDesign, gameState.timeOfDay); 
+            drawPath(ctx, currentStageDesign); 
+            drawWeatherEffects(particleCtx); 
+            
+            gameState.towers.forEach(t => t.draw()); 
+            gameState.enemies.forEach(e => e.draw());
+            gameState.projectiles.forEach(p => p.draw()); 
+            gameState.particles.forEach(p => { if (typeof p.draw === 'function') p.draw(particleCtx); });
+            
             if (gameState.selectedTowerType && mouseX !== undefined && mouseY !== undefined && towerTypes[gameState.selectedTowerType]) {
                 const canPlace = isValidTowerPosition(mouseX, mouseY);
                 ctx.fillStyle = canPlace ? 'rgba(144, 238, 144, 0.5)' : 'rgba(255, 105, 97, 0.5)'; 
@@ -1741,7 +1872,17 @@
         function updateUI() { 
             const el = (id) => document.getElementById(id); 
             if(el('health')) el('health').textContent = Math.max(0, gameState.health);
-            if(el('gold')) el('gold').textContent = gameState.gold; if(el('wave')) el('wave').textContent = gameState.wave;
+            if(el('gold')) el('gold').textContent = gameState.gold; 
+            
+            const waveInStage = (gameState.wave - 1) % WAVES_PER_STAGE + 1;
+            const totalWavesInStage = WAVES_PER_STAGE;
+            const isBossWave = waveInStage === totalWavesInStage;
+
+            if(el('wave')) el('wave').textContent = gameState.wave;
+            if(el('waveInStageDisplay')) el('waveInStageDisplay').textContent = `${waveInStage}${isBossWave ? ' (Boss!)': ''}/${totalWavesInStage}`;
+            if(el('currentStageDisplay')) el('currentStageDisplay').textContent = gameState.currentStage + 1;
+            if(el('totalStagesDisplay')) el('totalStagesDisplay').textContent = gameState.totalStages;
+
             if(el('enemies')) el('enemies').textContent = `${gameState.enemies.length} (K:${gameState.enemiesKilledThisWave}/${gameState.expectedEnemiesThisWave > 0 ? gameState.expectedEnemiesThisWave : gameState.enemiesSpawnedThisWave })`;
             if(el('experience')) el('experience').textContent = gameState.experience; if(el('level')) el('level').textContent = gameState.level;
             if(el('combo')) el('combo').textContent = `${gameState.combo}x`;
@@ -1755,7 +1896,6 @@
             }
             if(el('dailyQuestText')) el('dailyQuestText').textContent = gameState.dailyQuestText;
 
-            // Combo Meter UI
             const comboMeterContainer = el('comboMeterContainer');
             const comboMeterFill = el('comboMeterFill');
             const comboMeterText = el('comboMeterText');
@@ -1766,7 +1906,7 @@
 
                 if (gameState.turboModeActive) {
                     comboMeterContainer.classList.add('turbo-active');
-                    const timeLeft = Math.max(0, Math.ceil((gameState.turboModeEndTime - Date.now()) / 1000));
+                    const timeLeft = Math.max(0, Math.ceil((gameState.turboModeEndTime - performance.now()) / 1000)); // Use performance.now()
                     comboMeterText.textContent = `TURBO! ${timeLeft}s`;
                 } else if (gameState.comboPoints >= MAX_COMBO_POINTS) {
                     comboMeterContainer.classList.add('ready');
@@ -1775,7 +1915,6 @@
                     comboMeterText.textContent = `POWER ${gameState.comboPoints}/${MAX_COMBO_POINTS}`;
                 }
             }
-
 
             for (let type in towerTypes) { const btn = document.querySelector(`.tower-btn[onclick="selectTower('${type}')"]`); if (btn) btn.disabled = gameState.gold < towerTypes[type].cost || gameState.waveActive || gameState.selectedTowerType === type; }
             const waveBtn = el('waveBtn');
@@ -1786,27 +1925,42 @@
                  else waveBtn.textContent = '🌊 Summon Next Wave';
             }
         }
-        function gameOver() { 
+        function gameOver(status = "defeated") { 
             gameState.gameRunning = false; 
-            if (audioElement && !audioElement.paused) {
-                audioElement.pause();
-            }
-            if (gameState.turboModeActive) { // End turbo if game over
+            if (audioElement && !audioElement.paused) audioElement.pause();
+            if (gameState.turboModeActive) { 
                  gameState.turboModeActive = false;
                  if(gameContainer) gameContainer.classList.remove('turbo-active-screen');
             }
             const el = (id) => document.getElementById(id);
-            if(el('finalWave')) el('finalWave').textContent = gameState.wave; if(el('finalExp')) el('finalExp').textContent = gameState.experience;
-            if(el('finalCombo')) el('finalCombo').textContent = gameState.maxCombo; const gameOverEl = el('gameOver'); if(gameOverEl) gameOverEl.style.display = 'flex'; 
+            const gameOverEl = el('gameOver');
+            const titleEl = el('gameOverTitle');
+            const startBtnEl = el('startBtn');
+
+            if (status === "won") {
+                if(titleEl) titleEl.textContent = "🌳 All Forests Saved! 🌳";
+                if(el('finalStage')) el('finalStage').textContent = `Stage ${gameState.currentStage + 1}`;
+                if(el('finalWave')) el('finalWave').textContent = `${gameState.wave -1} (All Stages Cleared!)`;
+                if(startBtnEl) startBtnEl.textContent = "Play Again?";
+            } else { // defeated
+                if(titleEl) titleEl.textContent = "🌙 The Forest Rests 🌙";
+                if(el('finalStage')) el('finalStage').textContent = `Stage ${gameState.currentStage + 1}`;
+                if(el('finalWave')) el('finalWave').textContent = gameState.wave;
+                if(startBtnEl) startBtnEl.textContent = "🌱 Guardian Reborn";
+            }
+            if(el('finalExp')) el('finalExp').textContent = gameState.experience;
+            if(el('finalCombo')) el('finalCombo').textContent = gameState.maxCombo; 
+            if(gameOverEl) gameOverEl.style.display = 'flex'; 
         }
         function restartGame() {
              gameState = {
-                health: 100, gold: 200, wave: 1, experience: 0, level: 1, combo: 0, maxCombo: 0,
+                health: 100, gold: 200, wave: 1, currentStage: 0, totalStages: 10,
+                experience: 0, level: 1, combo: 0, maxCombo: 0,
                 enemies: [], towers: [], projectiles: [], particles: [], powerUpsOnMap: [],
                 selectedTowerType: null, selectedTower: null, gameRunning: true, waveActive: false,
                 enemiesSpawnedThisWave: 0, enemiesKilledThisWave: 0, expectedEnemiesThisWave: 0,
                 totalEnemiesKilled: 0, achievements: new Set(),
-                weather: 'sunny', timeOfDay: 'day', specialEvents: [],
+                weather: stageDesigns[0].defaultWeather || 'sunny', timeOfDay: 'day', specialEvents: [],
                 lastLoginDate: localStorage.getItem('forestGuardiansLastLogin'), 
                 currentWeatherEffectApplied: false, dailyQuestText: "Vanquish 10 Goblins!",
                 powerUpSpawnChance: 0.001, activeTowerBoosts: [],
@@ -1816,17 +1970,20 @@
             };
             if (audioElement) { 
                 audioElement.currentTime = 0; 
-                if (!audioElement.paused) {
-                    audioElement.pause();
-                }
+                if (!audioElement.paused) audioElement.pause();
             }
             if(gameContainer) gameContainer.classList.remove('turbo-active-screen');
             document.querySelectorAll('.power-up-icon').forEach(el => el.remove());
             const gameOverEl = document.getElementById('gameOver'); if(gameOverEl) gameOverEl.style.display = 'none';
-            closeUpgradePanel(); if(canvas) canvas.style.cursor = 'default'; updateUI(); 
+            closeUpgradePanel(); if(canvas) canvas.style.cursor = 'default'; 
+            
+            // Set initial weather based on first stage design
+            gameState.weather = stageDesigns[0].defaultWeather || 'sunny';
+            gameState.currentWeatherEffectApplied = false;
+            
+            updateUI(); 
             lastUpdateTime = performance.now(); gameLoopErrorLogged = false; 
-            if(!ctx || !particleCtx) { /* Already handled by DOMContentLoaded */ }
-            else { requestAnimationFrame(gameLoop); } 
+            if(ctx && particleCtx) { requestAnimationFrame(gameLoop); }
         }
         
         let mouseX = 0, mouseY = 0;
@@ -1844,58 +2001,38 @@
 
             if (audioElement) {
                 audioElement.volume = 0.3;
-                 if(audioElement.readyState >= 2 && !audioElement.paused){ 
-                    audioElement.pause(); 
-                 }
-            } else {
-                console.warn("DOMContentLoaded: Background music element (backgroundMusic) NOT found.");
-            }
+                 if(audioElement.readyState >= 2 && !audioElement.paused) audioElement.pause(); 
+            } else { console.warn("DOMContentLoaded: Background music element (backgroundMusic) NOT found."); }
 
-            if (waveStartSfxElement) {
-                waveStartSfxElement.volume = 0.5;
-            } else {
-                console.warn("DOMContentLoaded: Wave start SFX element (waveStartSoundEffect) NOT found.");
-            }
+            if (waveStartSfxElement) { waveStartSfxElement.volume = 0.5; } 
+            else { console.warn("DOMContentLoaded: Wave start SFX element (waveStartSoundEffect) NOT found."); }
 
             const muteBtnEl = document.getElementById('muteBtn');
-            if (muteBtnEl) {
-                muteBtnEl.addEventListener('click', toggleMusic);
-            }
+            if (muteBtnEl) muteBtnEl.addEventListener('click', toggleMusic);
             
             const upgradePanelElement = document.getElementById('upgradePanel');
             if (upgradePanelElement) {
                 upgradePanelElement.addEventListener('click', function(event) {
                     const targetButton = event.target.closest('.upgrade-btn');
                     if (!targetButton) return; 
-
-                    if (targetButton.dataset.upgradeKey) {
-                        const upgradeKey = targetButton.dataset.upgradeKey;
-                        console.log(`[UpgradePanel Event] Upgrade button clicked for key: ${upgradeKey}`);
-                        upgradeTower(upgradeKey);
-                    } 
-                    else if (targetButton.dataset.action === 'sell') {
-                        console.log("[UpgradePanel Event] Sell button clicked.");
-                        sellTower();
-                    }
+                    if (targetButton.dataset.upgradeKey) upgradeTower(targetButton.dataset.upgradeKey);
+                    else if (targetButton.dataset.action === 'sell') sellTower();
                 });
-            } else {
-                console.error("DOMContentLoaded: CRITICAL - upgradePanel element not found for event listener setup.");
-            }
+            } else { console.error("DOMContentLoaded: CRITICAL - upgradePanel element not found."); }
 
             const comboMeterContainer = document.getElementById('comboMeterContainer');
             if (comboMeterContainer) {
-                comboMeterContainer.addEventListener('click', () => {
-                    if (gameState.gameRunning) {
-                        activateTurboMode();
-                    }
-                });
+                comboMeterContainer.addEventListener('click', () => { if (gameState.gameRunning) activateTurboMode(); });
             }
 
-
-            if(particleCanvas && canvas && canvas.width && canvas.height) { particleCanvas.width = canvas.width; particleCanvas.height = canvas.height; console.log("Particle canvas dimensions synced with game canvas."); } 
+            if(particleCanvas && canvas && canvas.width && canvas.height) { particleCanvas.width = canvas.width; particleCanvas.height = canvas.height; } 
             else { console.error("DOMContentLoaded: Canvas elements or main canvas dimensions not ready for particle canvas setup."); }
             
             gameState.lastLoginDate = localStorage.getItem('forestGuardiansLastLogin');
+            // Initial weather setup from stage 0 design
+            gameState.weather = stageDesigns[0].defaultWeather || 'sunny';
+            gameState.currentWeatherEffectApplied = false;
+
             if (ctx && particleCtx) { 
                 checkDailyLoginReward(); updateUI(); lastUpdateTime = performance.now();
                 console.log("DOMContentLoaded: All checks passed. Starting game loop.");
@@ -1903,7 +2040,7 @@
             } else {
                 console.error("DOMContentLoaded: CRITICAL - Canvas contexts not available. Game loop NOT started.");
                 const errDiv = document.createElement('div');
-                errDiv.innerHTML = '<p style="color:red; background:rgba(255,255,255,0.9); padding:20px; text-align:center; font-size:18px; border: 2px solid red; border-radius: 10px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000;">Critical Error: The game could not be initialized. <br>This might be due to issues with graphics rendering in your browser or environment. <br>Please try refreshing the page. If the issue persists, check the browser console for more details.</p>';
+                errDiv.innerHTML = '<p style="color:red; background:rgba(255,255,255,0.9); padding:20px; text-align:center; font-size:18px; border: 2px solid red; border-radius: 10px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000;">Critical Error: Game initialization failed. <br>Please refresh. Check console for details.</p>';
                 if(gameContainer) gameContainer.insertBefore(errDiv, gameContainer.firstChild); 
                 else if(document.body) document.body.appendChild(errDiv);
             }
